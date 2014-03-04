@@ -82,7 +82,7 @@ enum reg_class
 #define O386_EFLAGS  10
 
 #define REGISTER_NAMES { \
-"eax","edx","ecx","ebx","esi","edi","ebp","esp","arg","qfp","eflags" \
+"%eax","%edx","%ecx","%ebx","%esi","%edi","%ebp","%esp","arg","qfp","eflags" \
 }
 
 #define FIXED_REGISTERS { \
@@ -198,7 +198,7 @@ enum reg_class
 /* Offset from the argument pointer register to the first argument's
    address.  On some machines it may depend on the data type of the
    function.  */
-#define FIRST_PARM_OFFSET(F) 12
+#define FIRST_PARM_OFFSET(F) 0
 
 /* Define this macro to nonzero value if the addresses of local variable slots
    are at negative offsets from the frame pointer.  */
@@ -323,8 +323,8 @@ enum reg_class
 
 #define HARD_FRAME_POINTER_REGNUM O386_EBP
 
-#define ELIMINABLE_REGS							\
-{{ FRAME_POINTER_REGNUM, HARD_FRAME_POINTER_REGNUM },			\
+#define ELIMINABLE_REGS  \
+{{ FRAME_POINTER_REGNUM, HARD_FRAME_POINTER_REGNUM },  \
  { ARG_POINTER_REGNUM,   HARD_FRAME_POINTER_REGNUM }}			
 
 /* This macro is similar to `INITIAL_FRAME_POINTER_OFFSET'.  It

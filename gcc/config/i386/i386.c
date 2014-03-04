@@ -144,13 +144,13 @@ o386_print_operand (FILE *file, rtx x, int code)
       return;
 
     default:
-      /* No need to handle all strange variants, let output_addr_const
-	 do it for us.  */
-      if (CONSTANT_P (operand))
-	{
-	  output_addr_const (file, operand);
-	  return;
-	}
+      /* No need to handle all strange variants, let output_addr_const do it for us.  */
+      if (CONST_INT_P (operand))
+        putc('$',file);
+      if (CONSTANT_P (operand)) {
+        output_addr_const (file, operand);
+        return;
+      }
 
       LOSE_AND_RETURN ("unexpected operand", x);
     }
@@ -208,15 +208,6 @@ o386_print_operand_address (FILE *file, rtx x)
 }
 
 
-int
-o386_initial_elimination_offset (int from, int to)
-{
-  // TODO: Complete this
-  return 0;
-}
-
-
-static int o386_callee_saved_reg_size;
 
 /*int
 compute_frame_size (int size, long * p_reg_saved)
@@ -252,12 +243,12 @@ o386_compute_frame (void)
 
   cfun->machine->local_vars_size += padding_locals;
 
-  o386_callee_saved_reg_size = 0;
+  cfun->machine->callee_saved_reg_size = 0;
 
   /* Save callee-saved registers.  */
   for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
     if (df_regs_ever_live_p(regno) && (! call_used_regs[regno]))
-      o386_callee_saved_reg_size += 4;
+      cfun->machine->callee_saved_reg_size += 4;
 
   cfun->machine->size_for_adjusting_sp = 
     crtl->args.pretend_args_size
@@ -265,7 +256,58 @@ o386_compute_frame (void)
     + (ACCUMULATE_OUTGOING_ARGS ? crtl->outgoing_args_size : 0);
 }
 
+int
+o386_initial_elimination_offset (int from, int to)
+{
+  /*int ret;
+  
+  if ((from) == FRAME_POINTER_REGNUM && (to) == HARD_FRAME_POINTER_REGNUM)
+    {
+      // Compute this since we need to use cfun->machine->local_vars_size.  
+      o386_compute_frame ();
+      ret = -cfun->machine->callee_saved_reg_size;
+    }
+  else if ((from) == ARG_POINTER_REGNUM && (to) == HARD_FRAME_POINTER_REGNUM)
+    ret = 0x00;
+  else
+    abort ();
 
+  return ret;*/
+
+  if ((from) == FRAME_POINTER_REGNUM && (to) == HARD_FRAME_POINTER_REGNUM) {
+    // Frame pointer is hard frame pointer! :D
+    return 0x0;
+  }
+  else if ((from) == ARG_POINTER_REGNUM && (to) == HARD_FRAME_POINTER_REGNUM) {
+    // Arg pointer is at 4 + 4 (ret@ + HFP) + callee-saved distance
+    o386_compute_frame();
+    return cfun->machine->callee_saved_reg_size + 4 + 4;
+  }
+  else
+    abort();
+  
+}
+
+
+/* Stack format:
+
+Callee function:  |-------------------------|  <- ESP
+                  |  Local variables        |
+                  |-------------------------|  <- EBP
+                  |  Hard frame pointer     |
+                  |-------------------------|
+                  |  Callee saved regs      |
+                  |-------------------------|
+                  |   Ret addr              |
+Caller function:  |-------------------------|  <- ARGS pointer
+                  |   Param 0 (leftmost)    |
+                  |   Param 1               |
+                  |     ...                 |
+                  |   Param N-1             |
+                  |-------------------------|
+                  | Caller saved registers  |
+                  |-------------------------|
+*/
 
 void
 o386_expand_prologue ()
@@ -276,20 +318,26 @@ o386_expand_prologue ()
   o386_compute_frame ();
 
   /* Save callee-saved registers.  */
-  for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
-    {
-      if (df_regs_ever_live_p(regno) && (! call_used_regs[regno]))
-	{
-	  insn = emit_insn (gen_movsi_push (gen_rtx_REG (Pmode, regno)));
-	  RTX_FRAME_RELATED_P (insn) = 1;
-	}
-    }
-
-  if (cfun->machine->size_for_adjusting_sp > 0)
-    {
-      insn = emit_insn (gen_addsi3 (stack_pointer_rtx, stack_pointer_rtx, GEN_INT (-cfun->machine->size_for_adjusting_sp)));
+  for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++) {
+    if (df_regs_ever_live_p(regno) && (! call_used_regs[regno])) {
+      insn = emit_insn (gen_movsi_push (gen_rtx_REG (Pmode, regno)));
       RTX_FRAME_RELATED_P (insn) = 1;
     }
+  }
+
+  /* Now save old frame pointer (needed?) */
+  insn = emit_insn (gen_movsi_push (gen_rtx_REG (Pmode, HARD_FRAME_POINTER_REGNUM)));
+  RTX_FRAME_RELATED_P (insn) = 1;
+
+  /* Now set the frame pointer as stack top */ 
+  insn = emit_insn (gen_movsi (gen_rtx_REG (Pmode, HARD_FRAME_POINTER_REGNUM), stack_pointer_rtx));
+  RTX_FRAME_RELATED_P (insn) = 1;
+
+  /* Now move stack pointer to allocate local vars */
+  if (cfun->machine->size_for_adjusting_sp > 0) {
+    insn = emit_insn (gen_addsi3 (stack_pointer_rtx, stack_pointer_rtx, GEN_INT (-cfun->machine->size_for_adjusting_sp)));
+    RTX_FRAME_RELATED_P (insn) = 1;
+  }
 }
 
 void
@@ -298,20 +346,25 @@ o386_expand_epilogue ()
   int regno;
   rtx insn;
 
-  if (o386_callee_saved_reg_size != 0)
-    {
-      /*insn = emit_insn (gen_movsi (gen_rtx_REG (Pmode, 7), GEN_INT (-o386_callee_saved_reg_size)));
-      RTX_FRAME_RELATED_P (insn) = 1;
-      insn = emit_insn (gen_addsi3 (stack_pointer_rtx, hard_frame_pointer_rtx, gen_rtx_REG (Pmode, 7)));
-      RTX_FRAME_RELATED_P (insn) = 1;*/
+  /* To restore the frame and stack it's quite simple 
+     just move the EBP to ESP to deallocate all local vars
+     Then pop EBP to restore original FP and finally pop
+     all saved regs.                                      */
 
-      for (regno = FIRST_PSEUDO_REGISTER; regno > 0; --regno)
-	if (df_regs_ever_live_p(regno) && (! call_used_regs[regno]))
-	  {
-	    insn = emit_insn (gen_movsi_pop (gen_rtx_REG (Pmode, regno)));
-	    RTX_FRAME_RELATED_P (insn) = 1;
-	  }
+  insn = emit_insn (gen_movsi (stack_pointer_rtx, gen_rtx_REG (Pmode, HARD_FRAME_POINTER_REGNUM)));
+  RTX_FRAME_RELATED_P (insn) = 1;
+
+  insn = emit_insn (gen_movsi_pop (gen_rtx_REG (Pmode, HARD_FRAME_POINTER_REGNUM)));
+  RTX_FRAME_RELATED_P (insn) = 1;
+
+
+  /* Save callee-saved registers.  */
+  for (regno = FIRST_PSEUDO_REGISTER-1; regno >= 0; --regno) {
+    if (df_regs_ever_live_p(regno) && (! call_used_regs[regno])) {
+      insn = emit_insn (gen_movsi_pop (gen_rtx_REG (Pmode, regno)));
+      RTX_FRAME_RELATED_P (insn) = 1;
     }
+  }
 
   insn = emit_jump_insn (gen_returner ());
   RTX_FRAME_RELATED_P (insn) = 1;
@@ -322,15 +375,15 @@ o386_expand_epilogue ()
 
 
 
-#undef TARGET_FUNCTION_VALUE
-#define TARGET_FUNCTION_VALUE o386_function_value
-#undef TARGET_FUNCTION_ARG_ADVANCE
-#define TARGET_FUNCTION_ARG_ADVANCE o386_function_arg_advance
-#undef TARGET_FUNCTION_ARG
-#define TARGET_FUNCTION_ARG o386_function_arg
+#undef  TARGET_FUNCTION_VALUE
+#define TARGET_FUNCTION_VALUE         o386_function_value
+#undef  TARGET_FUNCTION_ARG_ADVANCE
+#define TARGET_FUNCTION_ARG_ADVANCE   o386_function_arg_advance
+#undef  TARGET_FUNCTION_ARG
+#define TARGET_FUNCTION_ARG           o386_function_arg
 #undef  TARGET_RETURN_IN_MEMORY
-#define TARGET_RETURN_IN_MEMORY         o386_return_in_memory
-#undef TARGET_FUNCTION_VALUE_REGNO_P
+#define TARGET_RETURN_IN_MEMORY       o386_return_in_memory
+#undef  TARGET_FUNCTION_VALUE_REGNO_P
 #define TARGET_FUNCTION_VALUE_REGNO_P o386_function_value_regno_p
 
 
