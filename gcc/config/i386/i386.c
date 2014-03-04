@@ -115,6 +115,7 @@ void
 o386_print_operand (FILE *file, rtx x, int code)
 {
   rtx operand = x;
+  int skip_dollar = 0;
 
   /* New code entries should just be added to the switch below.  If
      handling is finished, just return.  If handling was just a
@@ -126,6 +127,10 @@ o386_print_operand (FILE *file, rtx x, int code)
     {
     case 0:
       /* No code, print as usual.  */
+      break;
+    case 'P':
+      // No dollar symbol (calls and jmps do not require it)
+      skip_dollar = 1;
       break;
 
     default:
@@ -145,9 +150,11 @@ o386_print_operand (FILE *file, rtx x, int code)
 
     default:
       /* No need to handle all strange variants, let output_addr_const do it for us.  */
-      if (CONST_INT_P (operand))
-        putc('$',file);
-      if (CONSTANT_P (operand)) {
+      //if (CONST_INT_P (operand))
+      if (GET_CODE (x) == CONST || GET_CODE (x) == SYMBOL_REF || CONST_INT_P(x) || GET_CODE(x) == LABEL_REF || GET_CODE(x) == CODE_LABEL)
+        if (!skip_dollar)
+          putc('$',file);
+      if (CONSTANT_P (operand) || GET_CODE(x) == CODE_LABEL) {
         output_addr_const (file, operand);
         return;
       }
@@ -208,22 +215,39 @@ o386_print_operand_address (FILE *file, rtx x)
 }
 
 
+static rtx o386_expand_int_compare (enum rtx_code code, rtx op0, rtx op1) {
+  enum machine_mode cmpmode;
+  rtx tmp, flags;
 
-/*int
-compute_frame_size (int size, long * p_reg_saved)
-{
-  int s = 0, regno;
+  cmpmode = CCmode; //SELECT_CC_MODE (code, op0, op1);
+  flags = gen_rtx_REG (cmpmode, O386_EFLAGS);
 
-  // Save callee-saved registers. 
-  for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
-    if (df_regs_ever_live_p(regno) && (! call_used_regs[regno]))
-      s += 4;
+  tmp = gen_rtx_COMPARE (cmpmode, op0, op1);
+  emit_insn (gen_rtx_SET (VOIDmode, flags, tmp));
 
-  return (size + s + current_function_outgoing_args_size);
-}*/
+  return gen_rtx_fmt_ee (code, VOIDmode, flags, const0_rtx);
+}
 
-/* Compute the size of the local area and the size to be adjusted by the
- * prologue and epilogue. */
+static rtx o386_expand_compare (enum rtx_code code, rtx op0, rtx op1) {
+  rtx ret;
+
+  // Only integer by now
+  ret = o386_expand_int_compare (code, op0, op1);
+
+  return ret;
+}
+
+void o386_expand_branch (enum rtx_code code, rtx op0, rtx op1, rtx label) {
+  enum machine_mode mode = GET_MODE (op0);
+  rtx tmp;
+
+  tmp = o386_expand_compare (code, op0, op1);
+  tmp = gen_rtx_IF_THEN_ELSE (VOIDmode, tmp, gen_rtx_LABEL_REF (VOIDmode, label), pc_rtx);
+  emit_jump_insn (gen_rtx_SET (VOIDmode, pc_rtx, tmp));
+}
+
+
+
 
 static void
 o386_compute_frame (void)
@@ -259,21 +283,6 @@ o386_compute_frame (void)
 int
 o386_initial_elimination_offset (int from, int to)
 {
-  /*int ret;
-  
-  if ((from) == FRAME_POINTER_REGNUM && (to) == HARD_FRAME_POINTER_REGNUM)
-    {
-      // Compute this since we need to use cfun->machine->local_vars_size.  
-      o386_compute_frame ();
-      ret = -cfun->machine->callee_saved_reg_size;
-    }
-  else if ((from) == ARG_POINTER_REGNUM && (to) == HARD_FRAME_POINTER_REGNUM)
-    ret = 0x00;
-  else
-    abort ();
-
-  return ret;*/
-
   if ((from) == FRAME_POINTER_REGNUM && (to) == HARD_FRAME_POINTER_REGNUM) {
     // Frame pointer is hard frame pointer! :D
     return 0x0;
@@ -285,7 +294,6 @@ o386_initial_elimination_offset (int from, int to)
   }
   else
     abort();
-  
 }
 
 
