@@ -172,6 +172,7 @@ o386_print_operand (FILE *file, rtx x, int code)
 void
 o386_print_operand_address (FILE *file, rtx x)
 {
+  debug_rtx(x);
   switch (GET_CODE (x))
     {
     case REG:
@@ -296,6 +297,105 @@ o386_initial_elimination_offset (int from, int to)
     abort();
 }
 
+// FIXME: Complete all jump types
+const char * o386_generate_cond_jump (rtx op) {
+	enum rtx_code code = GET_CODE (op);
+	switch (code) {
+	case EQ:
+		return "je %P1";
+	case NE:
+		return "jne %P1";
+	case GT:
+		return "jg %P1";
+	case LT:
+		return "jl %P1";
+	case LE:
+		return "jle %P1";
+	case GE:
+		return "jge %P1";
+	case GTU:
+		return "jmp %P1";
+	case LTU:
+		return "jmp %P1";
+	case LEU:
+		return "jmp %P1";
+	case GEU:
+		return "jmp %P1";
+	};
+	return "jjj %P1";
+}
+
+// Memory address stuff.
+// This fn returns true when an address seems valid. For now base + offset is allowed
+
+bool o386_valid_address (enum machine_mode mode, rtx x, bool strict_p) {
+  switch (GET_CODE (x)) {
+    case REG:
+    case SUBREG:
+      return REG_P(x);
+
+    //case PLUS:
+      // REG + const arithmetic
+    //  return ( REG_P( XEXP(x,0) ), CONST_INT_P( XEXP(x,1) ) );
+
+    case CONST_INT:
+    case CONST:
+    case LABEL_REF:
+    case SYMBOL_REF:
+      return true;
+
+    default:
+      return false;
+    }
+}
+
+// This function is quite tricky. As memory operands may be ugly we need a way to
+// convert a valid RTX address calculation into a valid processor implementable RTX
+// to load the address. Therefore it is possible that we need to break the RTX into
+// several intermediate computations
+
+/* If X is a PLUS of a CONST_INT, return the two terms in *BASE_PTR
+   and *OFFSET_PTR.  Return X in *BASE_PTR and 0 in *OFFSET_PTR otherwise.  */
+
+/*static void o386_split_plus (rtx x, rtx *base_ptr, HOST_WIDE_INT *offset_ptr) {
+  if (GET_CODE (x) == PLUS && CONST_INT_P (XEXP (x, 1))) {
+    *base_ptr = XEXP (x, 0);
+    *offset_ptr = INTVAL (XEXP (x, 1));
+  } else {
+    *base_ptr = x;
+    *offset_ptr = 0;
+  }
+}*/
+
+static rtx o386_force_address (rtx x, enum machine_mode mode) {
+  if (!o386_valid_address (mode, x, false))
+    x = force_reg (Pmode, x);
+  return x;
+}
+
+rtx o386_legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED, enum machine_mode mode) {
+  rtx base, addr;
+  HOST_WIDE_INT offset;
+
+  // Handle BASE + OFFSET using mips_add_offset.
+  //o386_split_plus (x, &base, &offset);
+  //if (offset != 0) {
+    //addr = mips_add_offset (NULL, base, offset);
+    if (GET_CODE (x) == PLUS)
+      addr = force_reg( Pmode, gen_rtx_PLUS(Pmode, XEXP(x,0), XEXP(x,1) ) );
+    //return o386_force_address (x, mode);
+  //}
+
+  //return x;
+}
+
+
+#undef TARGET_LEGITIMIZE_ADDRESS
+#define TARGET_LEGITIMIZE_ADDRESS   o386_legitimize_address
+#undef TARGET_LEGITIMATE_ADDRESS_P
+#define TARGET_LEGITIMATE_ADDRESS_P	o386_valid_address
+
+
 
 /* Stack format:
 
@@ -408,6 +508,10 @@ o386_function_value (const_tree valtype,
                       bool outgoing ATTRIBUTE_UNUSED)
 {
   return gen_rtx_REG (TYPE_MODE (valtype), O386_EAX);
+}
+
+rtx o386_libcall_value  (enum machine_mode mode, const_rtx fun ATTRIBUTE_UNUSED) {
+	return gen_rtx_REG (mode, O386_EAX);
 }
 
 #define O386_FUNCTION_ARG_SIZE(MODE, TYPE)     \

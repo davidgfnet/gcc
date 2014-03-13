@@ -225,6 +225,8 @@ enum reg_class
 		 plus_constant (frame_pointer_rtx, UNITS_PER_WORD))
 
 
+#define TARGET_LIBCALL_VALUE o386_libcall_value
+
 
 
 /* Storage Layout */
@@ -392,7 +394,7 @@ enum reg_class
 /* A C compound statement with a conditional `goto LABEL;' executed
    if X (an RTX) is a legitimate memory address on the target machine
    for a memory operand of mode MODE.  */
-#define GO_IF_LEGITIMATE_ADDRESS(MODE,X,LABEL)		\
+#define NOOOO_GO_IF_LEGITIMATE_ADDRESS(MODE,X,LABEL)		\
   do {                                                  \
     if (GET_CODE(X) == PLUS)				\
       {							\
