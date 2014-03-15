@@ -76,12 +76,5 @@
 (define_register_constraint "d" "DREG"
  "The @code{d} register.")
 
-(define_register_constraint "S" "SIREG"
- "The @code{si} register.")
-
-(define_register_constraint "D" "DIREG"
- "The @code{di} register.")
-
-
 
 

@@ -315,7 +315,7 @@ o386_initial_elimination_offset (int from, int to)
     abort();
 }
 
-// FIXME: Complete all jump types
+// Take a look at http://en.wikibooks.org/wiki/X86_Assembly/Control_Flow
 const char * o386_generate_cond_jump (rtx op) {
   enum rtx_code code = GET_CODE (op);
   switch (code) {
@@ -332,34 +332,41 @@ const char * o386_generate_cond_jump (rtx op) {
   case GE:
     return "jge %P1";
   case GTU:
-    return "jmp %P1";
+    return "ja %P1";   // ja is jg for unsigned
   case LTU:
-    return "jmp %P1";
+    return "jb %P1";   // Jb is jl for unsigned 
   case LEU:
-    return "jmp %P1";
+    return "jbe %P1";  // jbe is jle for unsigned 
   case GEU:
-    return "jmp %P1";
+    return "jae %P1";  // jae is jge for unsigned 
+  default:
+    return "jjj %P1";
   };
-  return "jjj %P1";
 }
 
 // Memory address stuff.
 // This fn returns true when an address seems valid. For now base + offset is allowed
 
 bool o386_valid_address (enum machine_mode mode, rtx x, bool strict_p) {
-  //fprintf(stderr,"o386_valid_address\n");
+  //fprintf(stderr,"o386_valid_address mode %d\n", mode);
   //debug_rtx (x);
   switch (GET_CODE (x)) {
     case REG:
     case SUBREG:
-      return REG_P(x);
+      if (strict_p)
+        return REG_P(x) && REGNO(x) < FIRST_PSEUDO_REGISTER;
+      else
+        return REG_P(x);
 
     case PLUS:
       //fprintf(stderr,"PLUS detected\n");
       //fprintf(stderr, "%d  %d\n", ( REG_P( XEXP(x,0) ) && CONST_INT_P( XEXP(x,1) ) ), strict_p);
       // REG + const arithmetic
-      return 0;
-      return ( REG_P( XEXP(x,0) ) && CONST_INT_P( XEXP(x,1) ) );
+      //return 0;
+      if (strict_p)
+        return ( REG_P( XEXP(x,0) ) && REGNO( XEXP(x,0) ) < FIRST_PSEUDO_REGISTER && CONST_INT_P( XEXP(x,1) ) );
+      else
+        return ( REG_P( XEXP(x,0) ) && CONST_INT_P( XEXP(x,1) ) );
 
     case CONST_INT:
     case CONST:
@@ -422,14 +429,21 @@ rtx o386_legitimize_reload_address (rtx x,enum machine_mode mode) {
 }
 
 
-
-
 #undef  TARGET_LEGITIMIZE_ADDRESS
 #define TARGET_LEGITIMIZE_ADDRESS     o386_legitimize_address
 #undef  TARGET_LEGITIMATE_ADDRESS_P
 #define TARGET_LEGITIMATE_ADDRESS_P	  o386_valid_address
 
 
+bool o386_hard_regno_mode_ok (int regno, enum machine_mode mode) {
+	if (QImode == mode) {
+		return (regno == O386_EAX || 
+			regno == O386_EBX ||
+			regno == O386_ECX ||
+			regno == O386_EDX);
+	}
+	return true;
+}
 
 /* Stack format:
 

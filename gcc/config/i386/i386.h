@@ -27,6 +27,8 @@
 #define TARGET_DEFAULT 0
 #define TARGET_MACHO   0
 
+#define ASM_ATT 0
+#define ASSEMBLER_DIALECT ASM_ATT
 
 /* Basic machine description */
 
@@ -51,7 +53,7 @@ enum reg_class
   GENERAL_REGS,  // GPR registers
   CC_REGS,       // EFLAGS register
 
-  AREG, BREG, CREG, DREG, SIREG, DIREG, // GPR regs, spearated
+  AREG, BREG, CREG, DREG,  // Q regs
 
   ALL_REGS,
   LIM_REG_CLASSES
@@ -66,8 +68,6 @@ enum reg_class
   { 0x00000008 }, /* EBX */ \
   { 0x00000004 }, /* ECX */ \
   { 0x00000002 }, /* EDX */ \
-  { 0x00000010 }, /* ESI */ \
-  { 0x00000020 }, /* EDI */ \
    \
   { 0x000007FF }  /* All */      \
 }
@@ -78,7 +78,7 @@ enum reg_class
     "NO_REGS", \
     "GENERAL_REGS", \
     "CC_REGS", \
-    "AREG", "BREG", "CREG", "DREG", "SIREG", "DIREG", \
+    "AREG", "BREG", "CREG", "DREG", \
     "ALL_REGS" }
 
 #define O386_EAX      0
@@ -97,7 +97,7 @@ enum reg_class
 "%eax","%edx","%ecx","%ebx","%esi","%edi","%ebp","%esp","arg","qfp","eflags" \
 }
 #define REGISTER_NAMES_BYTE { \
-"%al","%dl","%cl","%bl","NA","NA","NA","NA","arg","qfp","eflags" \
+"%al","%dl","%cl","%bl","NA_si","NA_di","NA_bp","NA_sp","arg","qfp","eflags" \
 }
 #define REGISTER_NAMES_WORD { \
 "%ax","%dx","%cx","%bx","%si","%di","%bp","%sp","arg","qfp","eflags" \
@@ -120,11 +120,16 @@ enum reg_class
    value of mode MODE in hard register number REGNO (or in several
    registers starting with that one).  All gstore registers are 
    equivalent, so we can set this to 1.  */
-#define HARD_REGNO_MODE_OK(R,M) 1
+#define HARD_REGNO_MODE_OK(R,M) o386_hard_regno_mode_ok(R,M)
 
 /* A C expression whose value is a register class containing hard
    register REGNO.  */
-#define REGNO_REG_CLASS(R) ((R < O386_EFLAGS) ? GENERAL_REGS : CC_REGS)
+#define REGNO_REG_CLASS(R) \
+  (R == O386_EAX ? AREG : \
+  (R == O386_EBX ? BREG : \
+  (R == O386_ECX ? CREG : \
+  (R == O386_EDX ? DREG : \
+   ((R < O386_EFLAGS) ? GENERAL_REGS : CC_REGS)))))
 
 /* A C expression for the number of consecutive hard registers,
    starting at register number REGNO, required to hold a value of mode
@@ -142,8 +147,11 @@ enum reg_class
 // Copied from Moxie, need to review
 
 #undef  ASM_SPEC
+#undef  ASM_COMMENT_START
 #define ASM_COMMENT_START "#"
+#undef  ASM_APP_ON
 #define ASM_APP_ON ""
+#undef  ASM_APP_OFF
 #define ASM_APP_OFF ""
 
 #define FILE_ASM_OP     "\t.file\n"
@@ -164,6 +172,7 @@ enum reg_class
 
 /* Output and Generation of Labels */
 
+#undef  GLOBAL_ASM_OP
 #define GLOBAL_ASM_OP "\t.global\t"
 
 
@@ -405,9 +414,6 @@ enum reg_class
    elements of a jump-table should have.  */
 #define CASE_VECTOR_MODE SImode
 
-/* All load operations zero extend.  */
-#define LOAD_EXTEND_OP(MEM) ZERO_EXTEND
-
 
 #define LEGITIMIZE_RELOAD_ADDRESS(X,MODE,OPNUM,TYPE,IND_L,WIN)          \
   do {                                                                  \
@@ -422,6 +428,9 @@ enum reg_class
 
 #define TARGET_CPU_CPP_BUILTINS()
 
+#define TARGET_SUBTARGET_ISA_DEFAULT 0
+
+#define SUBTARGET_CPP_SPEC  "-D__i386__"
 
 #endif
 
