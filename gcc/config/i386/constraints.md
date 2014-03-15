@@ -62,4 +62,26 @@
   (and (match_code "const_int")
        (match_test "ival == 0")))
 
+;; x86 registers
+
+(define_register_constraint "a" "AREG"
+ "The @code{a} register.")
+
+(define_register_constraint "b" "BREG"
+ "The @code{b} register.")
+
+(define_register_constraint "c" "CREG"
+ "The @code{c} register.")
+
+(define_register_constraint "d" "DREG"
+ "The @code{d} register.")
+
+(define_register_constraint "S" "SIREG"
+ "The @code{si} register.")
+
+(define_register_constraint "D" "DIREG"
+ "The @code{di} register.")
+
+
+
 

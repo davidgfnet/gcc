@@ -62,6 +62,9 @@ along with GCC; see the file COPYING3.  If not see
 #include "opts.h"
 #include "diagnostic.h"
 
+static const char *const reg_names_byte[] = REGISTER_NAMES_BYTE;
+static const char *const reg_names_word[] = REGISTER_NAMES_WORD;
+
 
 /* Per-function machine data.  */
 struct GTY(()) machine_function
@@ -116,6 +119,7 @@ o386_print_operand (FILE *file, rtx x, int code)
 {
   rtx operand = x;
   int skip_dollar = 0;
+  int reg_16 = 0, reg_8 = 0;
 
   /* New code entries should just be added to the switch below.  If
      handling is finished, just return.  If handling was just a
@@ -132,6 +136,14 @@ o386_print_operand (FILE *file, rtx x, int code)
       // No dollar symbol (calls and jmps do not require it)
       skip_dollar = 1;
       break;
+    case 'w':
+      // Use 16 bit register name (without the E for extended)
+      reg_16 = 1;
+      break;
+    case 'b':
+      // Use byte reg name (LOW half)
+      reg_8 = 1;
+      break;
 
     default:
       LOSE_AND_RETURN ("invalid operand modifier letter", x);
@@ -141,7 +153,13 @@ o386_print_operand (FILE *file, rtx x, int code)
   switch (GET_CODE (operand))
     {
     case REG:
-      fprintf (file, "%s", reg_names[REGNO (operand)]);
+      gcc_assert(REGNO (operand) < sizeof(reg_names)/sizeof(reg_names[0]));
+      if (reg_8)
+        fprintf (file, "%s", reg_names_byte[REGNO (operand)]);
+      else if (reg_16)
+        fprintf (file, "%s", reg_names_word[REGNO (operand)]);
+      else
+        fprintf (file, "%s", reg_names[REGNO (operand)]);
       return;
 
     case MEM:
@@ -172,7 +190,7 @@ o386_print_operand (FILE *file, rtx x, int code)
 void
 o386_print_operand_address (FILE *file, rtx x)
 {
-  debug_rtx(x);
+  //debug_rtx(x);
   switch (GET_CODE (x))
     {
     case REG:
@@ -299,44 +317,49 @@ o386_initial_elimination_offset (int from, int to)
 
 // FIXME: Complete all jump types
 const char * o386_generate_cond_jump (rtx op) {
-	enum rtx_code code = GET_CODE (op);
-	switch (code) {
-	case EQ:
-		return "je %P1";
-	case NE:
-		return "jne %P1";
-	case GT:
-		return "jg %P1";
-	case LT:
-		return "jl %P1";
-	case LE:
-		return "jle %P1";
-	case GE:
-		return "jge %P1";
-	case GTU:
-		return "jmp %P1";
-	case LTU:
-		return "jmp %P1";
-	case LEU:
-		return "jmp %P1";
-	case GEU:
-		return "jmp %P1";
-	};
-	return "jjj %P1";
+  enum rtx_code code = GET_CODE (op);
+  switch (code) {
+  case EQ:
+    return "je %P1";
+  case NE:
+    return "jne %P1";
+  case GT:
+    return "jg %P1";
+  case LT:
+    return "jl %P1";
+  case LE:
+    return "jle %P1";
+  case GE:
+    return "jge %P1";
+  case GTU:
+    return "jmp %P1";
+  case LTU:
+    return "jmp %P1";
+  case LEU:
+    return "jmp %P1";
+  case GEU:
+    return "jmp %P1";
+  };
+  return "jjj %P1";
 }
 
 // Memory address stuff.
 // This fn returns true when an address seems valid. For now base + offset is allowed
 
 bool o386_valid_address (enum machine_mode mode, rtx x, bool strict_p) {
+  //fprintf(stderr,"o386_valid_address\n");
+  //debug_rtx (x);
   switch (GET_CODE (x)) {
     case REG:
     case SUBREG:
       return REG_P(x);
 
-    //case PLUS:
+    case PLUS:
+      //fprintf(stderr,"PLUS detected\n");
+      //fprintf(stderr, "%d  %d\n", ( REG_P( XEXP(x,0) ) && CONST_INT_P( XEXP(x,1) ) ), strict_p);
       // REG + const arithmetic
-    //  return ( REG_P( XEXP(x,0) ), CONST_INT_P( XEXP(x,1) ) );
+      return 0;
+      return ( REG_P( XEXP(x,0) ) && CONST_INT_P( XEXP(x,1) ) );
 
     case CONST_INT:
     case CONST:
@@ -354,46 +377,57 @@ bool o386_valid_address (enum machine_mode mode, rtx x, bool strict_p) {
 // to load the address. Therefore it is possible that we need to break the RTX into
 // several intermediate computations
 
-/* If X is a PLUS of a CONST_INT, return the two terms in *BASE_PTR
-   and *OFFSET_PTR.  Return X in *BASE_PTR and 0 in *OFFSET_PTR otherwise.  */
-
-/*static void o386_split_plus (rtx x, rtx *base_ptr, HOST_WIDE_INT *offset_ptr) {
-  if (GET_CODE (x) == PLUS && CONST_INT_P (XEXP (x, 1))) {
-    *base_ptr = XEXP (x, 0);
-    *offset_ptr = INTVAL (XEXP (x, 1));
-  } else {
-    *base_ptr = x;
-    *offset_ptr = 0;
+rtx o386_legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED, enum machine_mode mode) {
+  //fprintf(stderr,"Legitimize called!\n");
+  if (!o386_valid_address(mode,x,false)) {
+    if (GET_CODE (x) == PLUS) {
+      rtx addr = force_reg( Pmode, gen_rtx_PLUS(Pmode, XEXP(x,0), XEXP(x,1) ) );
+      return addr;
+    }
   }
-}*/
 
-static rtx o386_force_address (rtx x, enum machine_mode mode) {
-  if (!o386_valid_address (mode, x, false))
-    x = force_reg (Pmode, x);
   return x;
 }
 
-rtx o386_legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED, enum machine_mode mode) {
-  rtx base, addr;
-  HOST_WIDE_INT offset;
+/* Our implementation of LEGITIMIZE_RELOAD_ADDRESS.  Returns a value to
+   replace the input X, or the original X if no replacement is called for.
+   The output parameter *WIN is 1 if the calling macro should goto WIN,
+   0 if it should not.  */
 
-  // Handle BASE + OFFSET using mips_add_offset.
-  //o386_split_plus (x, &base, &offset);
-  //if (offset != 0) {
-    //addr = mips_add_offset (NULL, base, offset);
-    if (GET_CODE (x) == PLUS)
-      addr = force_reg( Pmode, gen_rtx_PLUS(Pmode, XEXP(x,0), XEXP(x,1) ) );
-    //return o386_force_address (x, mode);
-  //}
+rtx o386_legitimize_reload_address (rtx x,enum machine_mode mode) {
+  /* Reload can generate:
 
-  //return x;
+     (plus:DI (plus:DI (unspec:DI [(const_int 0 [0])] UNSPEC_TP)
+		       (reg:DI 97))
+	      (reg:DI 2 cx))
+
+     This RTX is rejected from o386_legitimate_address_p due to
+     non-strictness of base register 97.  Following this rejection, 
+     reload pushes all three components into separate registers,
+     creating invalid memory address RTX.
+
+     Following code reloads only the invalid part of the
+     memory address RTX.  */
+
+  //fprintf(stderr,"Legitimize reload called!\n");
+  //debug_rtx (x);
+  if (!o386_valid_address(mode,x,false)) {
+    if (GET_CODE (x) == PLUS) {
+      rtx addr = force_reg( Pmode, gen_rtx_PLUS(Pmode, XEXP(x,0), XEXP(x,1) ) );
+      return addr;
+    }
+  }
+
+  return NULL_RTX;
 }
 
 
-#undef TARGET_LEGITIMIZE_ADDRESS
-#define TARGET_LEGITIMIZE_ADDRESS   o386_legitimize_address
-#undef TARGET_LEGITIMATE_ADDRESS_P
-#define TARGET_LEGITIMATE_ADDRESS_P	o386_valid_address
+
+
+#undef  TARGET_LEGITIMIZE_ADDRESS
+#define TARGET_LEGITIMIZE_ADDRESS     o386_legitimize_address
+#undef  TARGET_LEGITIMATE_ADDRESS_P
+#define TARGET_LEGITIMATE_ADDRESS_P	  o386_valid_address
 
 
 
@@ -546,6 +580,25 @@ o386_function_value_regno_p (const unsigned int regno)
 {
   return (regno == O386_EAX);
 }
+
+
+static void o386_init_builtins (void) {
+  tree float128_type_node;
+  float128_type_node = make_node (REAL_TYPE);
+  TYPE_PRECISION (float128_type_node) = 128;
+  layout_type (float128_type_node);
+  lang_hooks.types.register_builtin_type (float128_type_node, "__float128");
+}
+
+#undef TARGET_INIT_BUILTINS
+#define TARGET_INIT_BUILTINS o386_init_builtins
+
+
+static bool o386_scalar_mode_supported_p (enum machine_mode mode) {
+  return true;
+}
+#undef TARGET_SCALAR_MODE_SUPPORTED_P
+#define TARGET_SCALAR_MODE_SUPPORTED_P o386_scalar_mode_supported_p
 
 
 struct gcc_target targetm = TARGET_INITIALIZER;

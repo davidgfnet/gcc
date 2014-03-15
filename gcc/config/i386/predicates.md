@@ -63,19 +63,5 @@
     )
 )
 
-(define_predicate "ecx_register"
-    (and (match_code "reg")
-         (match_test "REGNO (op) == O386_ECX")
-    )
-)
-
-(define_predicate "shift_operand"
-    (and (match_code "reg")
-         (match_test "REGNO (op) == O386_ECX")
-    )
-)
-
-
-
 
 

@@ -50,6 +50,9 @@ enum reg_class
   NO_REGS,
   GENERAL_REGS,  // GPR registers
   CC_REGS,       // EFLAGS register
+
+  AREG, BREG, CREG, DREG, SIREG, DIREG, // GPR regs, spearated
+
   ALL_REGS,
   LIM_REG_CLASSES
 };
@@ -58,6 +61,14 @@ enum reg_class
 { { 0x00000000 }, /* Empty */    \
   { 0x000003FF }, /* eax..esp + argp + fp */ \
   { 0x00000400 }, /* eflags */   \
+   \
+  { 0x00000001 }, /* EAX */ \
+  { 0x00000008 }, /* EBX */ \
+  { 0x00000004 }, /* ECX */ \
+  { 0x00000002 }, /* EDX */ \
+  { 0x00000010 }, /* ESI */ \
+  { 0x00000020 }, /* EDI */ \
+   \
   { 0x000007FF }  /* All */      \
 }
 
@@ -67,6 +78,7 @@ enum reg_class
     "NO_REGS", \
     "GENERAL_REGS", \
     "CC_REGS", \
+    "AREG", "BREG", "CREG", "DREG", "SIREG", "DIREG", \
     "ALL_REGS" }
 
 #define O386_EAX      0
@@ -83,6 +95,12 @@ enum reg_class
 
 #define REGISTER_NAMES { \
 "%eax","%edx","%ecx","%ebx","%esi","%edi","%ebp","%esp","arg","qfp","eflags" \
+}
+#define REGISTER_NAMES_BYTE { \
+"%al","%dl","%cl","%bl","NA","NA","NA","NA","arg","qfp","eflags" \
+}
+#define REGISTER_NAMES_WORD { \
+"%ax","%dx","%cx","%bx","%si","%di","%bp","%sp","arg","qfp","eflags" \
 }
 
 #define FIXED_REGISTERS { \
@@ -391,27 +409,14 @@ enum reg_class
 #define LOAD_EXTEND_OP(MEM) ZERO_EXTEND
 
 
-/* A C compound statement with a conditional `goto LABEL;' executed
-   if X (an RTX) is a legitimate memory address on the target machine
-   for a memory operand of mode MODE.  */
-#define NOOOO_GO_IF_LEGITIMATE_ADDRESS(MODE,X,LABEL)		\
-  do {                                                  \
-    if (GET_CODE(X) == PLUS)				\
-      {							\
-	rtx op1,op2;					\
-	op1 = XEXP(X,0);				\
-	op2 = XEXP(X,1);				\
-	if (GET_CODE(op1) == REG			\
-	    && CONSTANT_ADDRESS_P(op2)			\
-	    && REGNO_OK_FOR_BASE_P(REGNO(op1)))		\
-	  goto LABEL;					\
-      }							\
-    if (REG_P (X) && REGNO_OK_FOR_BASE_P (REGNO (X)))	\
-      goto LABEL;					\
-    if (GET_CODE (X) == SYMBOL_REF			\
-	|| GET_CODE (X) == LABEL_REF			\
-	|| GET_CODE (X) == CONST)			\
-      goto LABEL;					\
+#define LEGITIMIZE_RELOAD_ADDRESS(X,MODE,OPNUM,TYPE,IND_L,WIN)          \
+  do {                                                                  \
+    rtx new_x = o386_legitimize_reload_address (&(X),MODE);             \
+    if (new_x != NULL_RTX)                                              \
+      {                                                                 \
+        X = new_x;                                                      \
+        goto WIN;                                                       \
+      }                                                                 \
   } while (0)
 
 

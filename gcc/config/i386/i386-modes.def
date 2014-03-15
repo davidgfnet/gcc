@@ -1,0 +1,1 @@
+FLOAT_MODE (TF, 16, ieee_quad_format);
