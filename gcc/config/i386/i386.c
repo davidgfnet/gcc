@@ -144,6 +144,10 @@ o386_print_operand (FILE *file, rtx x, int code)
       // Use byte reg name (LOW half)
       reg_8 = 1;
       break;
+    case 'k':
+      // This is the default 32 bit mode
+      // we need to support it (it's hardocded in cpuid.h for instance)
+      break;
 
     default:
       LOSE_AND_RETURN ("invalid operand modifier letter", x);
