@@ -481,22 +481,22 @@ o386_expand_prologue ()
   for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++) {
     if (df_regs_ever_live_p(regno) && (! call_used_regs[regno])) {
       insn = emit_insn (gen_movsi_push (gen_rtx_REG (Pmode, regno)));
-      RTX_FRAME_RELATED_P (insn) = 1;
+      //RTX_FRAME_RELATED_P (insn) = 1;
     }
   }
 
   /* Now save old frame pointer (needed?) */
   insn = emit_insn (gen_movsi_push (gen_rtx_REG (Pmode, HARD_FRAME_POINTER_REGNUM)));
-  RTX_FRAME_RELATED_P (insn) = 1;
+  //RTX_FRAME_RELATED_P (insn) = 1;
 
   /* Now set the frame pointer as stack top */ 
   insn = emit_insn (gen_movsi (gen_rtx_REG (Pmode, HARD_FRAME_POINTER_REGNUM), stack_pointer_rtx));
-  RTX_FRAME_RELATED_P (insn) = 1;
+  //RTX_FRAME_RELATED_P (insn) = 1;
 
   /* Now move stack pointer to allocate local vars */
   if (cfun->machine->size_for_adjusting_sp > 0) {
     insn = emit_insn (gen_addsi3 (stack_pointer_rtx, stack_pointer_rtx, GEN_INT (-cfun->machine->size_for_adjusting_sp)));
-    RTX_FRAME_RELATED_P (insn) = 1;
+    //RTX_FRAME_RELATED_P (insn) = 1;
   }
 }
 
@@ -512,22 +512,22 @@ o386_expand_epilogue ()
      all saved regs.                                      */
 
   insn = emit_insn (gen_movsi (stack_pointer_rtx, gen_rtx_REG (Pmode, HARD_FRAME_POINTER_REGNUM)));
-  RTX_FRAME_RELATED_P (insn) = 1;
+  //RTX_FRAME_RELATED_P (insn) = 1;
 
   insn = emit_insn (gen_movsi_pop (gen_rtx_REG (Pmode, HARD_FRAME_POINTER_REGNUM)));
-  RTX_FRAME_RELATED_P (insn) = 1;
+  //RTX_FRAME_RELATED_P (insn) = 1;
 
 
   /* Save callee-saved registers.  */
   for (regno = FIRST_PSEUDO_REGISTER-1; regno >= 0; --regno) {
     if (df_regs_ever_live_p(regno) && (! call_used_regs[regno])) {
       insn = emit_insn (gen_movsi_pop (gen_rtx_REG (Pmode, regno)));
-      RTX_FRAME_RELATED_P (insn) = 1;
+      //RTX_FRAME_RELATED_P (insn) = 1;
     }
   }
 
   insn = emit_jump_insn (gen_returner ());
-  RTX_FRAME_RELATED_P (insn) = 1;
+  //RTX_FRAME_RELATED_P (insn) = 1;
 }
 
 

@@ -54,6 +54,7 @@ enum reg_class
   CC_REGS,       // EFLAGS register
 
   AREG, BREG, CREG, DREG,  // Q regs
+  ESPREG,   // Stack pointer
 
   ALL_REGS,
   LIM_REG_CLASSES
@@ -68,6 +69,7 @@ enum reg_class
   { 0x00000008 }, /* EBX */ \
   { 0x00000004 }, /* ECX */ \
   { 0x00000002 }, /* EDX */ \
+  { 0x00000080 }, /* ESP */ \
    \
   { 0x000007FF }  /* All */      \
 }
@@ -78,7 +80,7 @@ enum reg_class
     "NO_REGS", \
     "GENERAL_REGS", \
     "CC_REGS", \
-    "AREG", "BREG", "CREG", "DREG", \
+    "AREG", "BREG", "CREG", "DREG", "ESPREG", \
     "ALL_REGS" }
 
 #define O386_EAX      0
@@ -129,7 +131,8 @@ enum reg_class
   (R == O386_EBX ? BREG : \
   (R == O386_ECX ? CREG : \
   (R == O386_EDX ? DREG : \
-   ((R < O386_EFLAGS) ? GENERAL_REGS : CC_REGS)))))
+  (R == O386_ESP ? ESPREG : \
+   ((R < O386_EFLAGS) ? GENERAL_REGS : CC_REGS))))))
 
 /* A C expression for the number of consecutive hard registers,
    starting at register number REGNO, required to hold a value of mode

@@ -77,4 +77,7 @@
  "The @code{d} register.")
 
 
+(define_register_constraint "t" "ESPREG"
+ "The @code{esp} register.")
+
 
