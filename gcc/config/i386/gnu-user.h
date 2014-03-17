@@ -99,7 +99,7 @@ along with GCC; see the file COPYING3.  If not see
   { "dynamic_linker", GNU_USER_DYNAMIC_LINKER }
 
 #undef	LINK_SPEC
-#define LINK_SPEC "-m %(link_emulation) %{shared:-shared} \
+#define LINK_SPEC "-m elf_i386 %{shared:-shared} \
   %{!shared: \
     %{!static: \
       %{rdynamic:-export-dynamic} \
