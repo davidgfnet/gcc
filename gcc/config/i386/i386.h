@@ -432,5 +432,7 @@ enum reg_class
 
 #define SUBTARGET_CPP_SPEC  "-D__i386__"
 
+#define TARGET_SMALL_REGISTER_CLASSES_FOR_MODE_P hook_bool_mode_true
+
 #endif
 
