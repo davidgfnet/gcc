@@ -54,6 +54,8 @@ enum reg_class
   CC_REGS,       // EFLAGS register
 
   AREG, BREG, CREG, DREG,  // Q regs
+  QREGS,                   // Q REGS
+  NOQREGS,                 // NonQ REGS
 
   ALL_REGS,
   LIM_REG_CLASSES
@@ -68,6 +70,8 @@ enum reg_class
   { 0x00000008 }, /* EBX */ \
   { 0x00000004 }, /* ECX */ \
   { 0x00000002 }, /* EDX */ \
+  { 0x0000000F }, /* Q  */ \
+  { 0x000000F0 }, /* NQ */ \
    \
   { 0x000007FF }  /* All */      \
 }
@@ -79,6 +83,8 @@ enum reg_class
     "GENERAL_REGS", \
     "CC_REGS", \
     "AREG", "BREG", "CREG", "DREG",  \
+	"QREG", \
+	"NQREG", \
     "ALL_REGS" }
 
 #define O386_EAX      0
@@ -122,6 +128,10 @@ enum reg_class
    equivalent, so we can set this to 1.  */
 #define HARD_REGNO_MODE_OK(R,M) o386_hard_regno_mode_ok(R,M)
 
+
+#define CANNOT_CHANGE_MODE_CLASS(FROM, TO, CLASS) \
+  o386_cannot_change_mode_class (FROM, TO, CLASS)
+
 /* A C expression whose value is a register class containing hard
    register REGNO.  */
 #define REGNO_REG_CLASS(R) \
@@ -129,7 +139,7 @@ enum reg_class
   (R == O386_EBX ? BREG : \
   (R == O386_ECX ? CREG : \
   (R == O386_EDX ? DREG : \
-   ((R < O386_EFLAGS) ? GENERAL_REGS : CC_REGS)))))
+   ((R < O386_EFLAGS) ? NOQREGS : CC_REGS)))))
 
 /* A C expression for the number of consecutive hard registers,
    starting at register number REGNO, required to hold a value of mode
@@ -413,6 +423,15 @@ enum reg_class
 /* An alias for a machine mode name.  This is the machine mode that
    elements of a jump-table should have.  */
 #define CASE_VECTOR_MODE SImode
+
+/* Place additional restrictions on the register class to use when it
+   is necessary to be able to hold a value of mode MODE in a reload
+   register for which class CLASS would ordinarily be used.  */
+
+#define LIMIT_RELOAD_CLASS(MODE, CLASS) 			\
+  ((MODE) == QImode  			\
+   && ((CLASS) == ALL_REGS || (CLASS) == GENERAL_REGS)	\
+   ? QREGS : (CLASS))
 
 
 #define LEGITIMIZE_RELOAD_ADDRESS(X,MODE,OPNUM,TYPE,IND_L,WIN)          \

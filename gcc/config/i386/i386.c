@@ -449,6 +449,15 @@ bool o386_hard_regno_mode_ok (int regno, enum machine_mode mode) {
 	return true;
 }
 
+bool o386_cannot_change_mode_class (enum machine_mode from, enum machine_mode to, enum reg_class rclass) {
+	if (to == QImode) {
+		if (!(rclass == AREG || rclass == BREG || 
+			rclass == CREG || rclass == DREG))
+		return true; // Cannot change to QI mode for non ABCD regs
+	}
+	return false;
+}
+
 /* Stack format:
 
 Callee function:  |-------------------------|  <- ESP
