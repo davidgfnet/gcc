@@ -269,8 +269,8 @@ enum reg_class
 /* Storage Layout */
 
 #define BITS_BIG_ENDIAN 0
-#define BYTES_BIG_ENDIAN 1
-#define WORDS_BIG_ENDIAN 1
+#define BYTES_BIG_ENDIAN 0
+#define WORDS_BIG_ENDIAN 0
 
 /* Alignment required for a function entry point, in bits.  */
 #define FUNCTION_BOUNDARY 16
