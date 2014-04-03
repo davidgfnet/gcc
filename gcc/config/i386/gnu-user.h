@@ -93,17 +93,21 @@ along with GCC; see the file COPYING3.  If not see
 #define ASM_SPEC \
   "--32 %{!mno-sse2avx:%{mavx:-msse2avx}} %{msse2avx:%{!mavx:-msse2avx}}"
 
+#define GNU_USER_LINK_EMULATION "elf_i386"
+#define GLIBC_DYNAMIC_LINKER "/lib/ld-linux.so.2"
+#define GNU_USER_DYNAMIC_LINKER GLIBC_DYNAMIC_LINKER 
+
 #undef  SUBTARGET_EXTRA_SPECS
 #define SUBTARGET_EXTRA_SPECS \
   { "link_emulation", GNU_USER_LINK_EMULATION },\
   { "dynamic_linker", GNU_USER_DYNAMIC_LINKER }
 
 #undef	LINK_SPEC
-#define LINK_SPEC "-m elf_i386 %{shared:-shared} \
+#define LINK_SPEC "-m elf_i386  %{shared:-shared} \
   %{!shared: \
     %{!static: \
       %{rdynamic:-export-dynamic} \
-      -dynamic-linker %(dynamic_linker)} \
+      -dynamic-linker /lib/ld-linux.so.2} \
       %{static:-static}}"
 
 /* Similar to standard GNU userspace, but adding -ffast-math support.  */
