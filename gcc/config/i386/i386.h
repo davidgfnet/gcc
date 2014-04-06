@@ -23,7 +23,7 @@
 #define GCC_O386_H
 
 
-// 386 specific stuff
+/* 386 specific stuff */
 #define TARGET_DEFAULT 0
 #define TARGET_MACHO   0
 
@@ -50,12 +50,12 @@
 enum reg_class
 {
   NO_REGS,
-  GENERAL_REGS,  // GPR registers
-  CC_REGS,       // EFLAGS register
+  GENERAL_REGS,  /* GPR registers */
+  CC_REGS,       /* EFLAGS register */
 
-  AREG, BREG, CREG, DREG,  // Q regs
-  QREGS,                   // Q REGS
-  NOQREGS,                 // NonQ REGS
+  AREG, BREG, CREG, DREG,  /* Q regs */
+  QREGS,                   /* Q REGS */
+  NOQREGS,                 /* NonQ REGS */
 
   ALL_REGS,
   LIM_REG_CLASSES
@@ -154,36 +154,14 @@ enum reg_class
 
 
 /* The Overall Framework of an Assembler File */
-// Copied from Moxie, need to review
 
 #undef  ASM_SPEC
-#undef  ASM_COMMENT_START
-#define ASM_COMMENT_START "#"
-#undef  ASM_APP_ON
-#define ASM_APP_ON ""
-#undef  ASM_APP_OFF
-#define ASM_APP_OFF ""
 
 #define FILE_ASM_OP     "\t.file\n"
-
-/* Switch to the text or data segment.  */
-#define TEXT_SECTION_ASM_OP  "\t.text"
-#define DATA_SECTION_ASM_OP  "\t.data"
-
-/* Assembler Commands for Alignment */
-
-#define ASM_OUTPUT_ALIGN(STREAM,POWER) \
-	fprintf (STREAM, "\t.p2align\t%d\n", POWER);
-
 
 /* Operand print format (implemented in .c file) */
 #define PRINT_OPERAND(STREAM, X, CODE) o386_print_operand (STREAM, X, CODE)
 #define PRINT_OPERAND_ADDRESS(STREAM ,X) o386_print_operand_address (STREAM, X)
-
-/* Output and Generation of Labels */
-
-#undef  GLOBAL_ASM_OP
-#define GLOBAL_ASM_OP "\t.global\t"
 
 
 /* Passing Arguments in Registers */
@@ -394,11 +372,13 @@ enum reg_class
 
 /* A C expression which is nonzero if register number NUM is suitable
    for use as a base register in operand addresses.  */
-//#ifdef REG_OK_STRICT
-//#define REGNO_OK_FOR_BASE_P(NUM) (HARD_REGNO_OK_FOR_BASE_P(NUM) || HARD_REGNO_OK_FOR_BASE_P(reg_renumber[(NUM)]))
-//#else
-//#define REGNO_OK_FOR_BASE_P(NUM) ((NUM) >= FIRST_PSEUDO_REGISTER || HARD_REGNO_OK_FOR_BASE_P(NUM))
-//#endif
+/*
+#ifdef REG_OK_STRICT
+#define REGNO_OK_FOR_BASE_P(NUM) (HARD_REGNO_OK_FOR_BASE_P(NUM) || HARD_REGNO_OK_FOR_BASE_P(reg_renumber[(NUM)]))
+#else
+#define REGNO_OK_FOR_BASE_P(NUM) ((NUM) >= FIRST_PSEUDO_REGISTER || HARD_REGNO_OK_FOR_BASE_P(NUM))
+#endif 
+*/
 #define REGNO_OK_FOR_BASE_P(NUM) 1
 
 #define REGNO_OK_FOR_INDEX_P(REGNO) 0

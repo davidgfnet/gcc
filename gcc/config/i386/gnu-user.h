@@ -32,14 +32,13 @@ along with GCC; see the file COPYING3.  If not see
 /* We arrange for the whole %gs segment to map the tls area.  */
 #undef TARGET_TLS_DIRECT_SEG_REFS_DEFAULT
 #define TARGET_TLS_DIRECT_SEG_REFS_DEFAULT 0
-//#define TARGET_TLS_DIRECT_SEG_REFS_DEFAULT MASK_TLS_DIRECT_SEG_REFS
 
 #undef ASM_COMMENT_START
 #define ASM_COMMENT_START "#"
 
-//#undef DBX_REGISTER_NUMBER
-//#define DBX_REGISTER_NUMBER(n) \
-//  (TARGET_64BIT ? dbx64_register_map[n] : svr4_dbx_register_map[n])
+/*#undef DBX_REGISTER_NUMBER
+#define DBX_REGISTER_NUMBER(n) \
+  (TARGET_64BIT ? dbx64_register_map[n] : svr4_dbx_register_map[n])*/
 
 /* Output assembler code to FILE to call the profiler.
    To the best of my knowledge, no GNU userspace libc has required the label
@@ -95,7 +94,6 @@ along with GCC; see the file COPYING3.  If not see
 
 #define GNU_USER_LINK_EMULATION "elf_i386"
 #define GLIBC_DYNAMIC_LINKER "/lib/ld-linux.so.2"
-#define GNU_USER_DYNAMIC_LINKER GLIBC_DYNAMIC_LINKER 
 
 #undef  SUBTARGET_EXTRA_SPECS
 #define SUBTARGET_EXTRA_SPECS \

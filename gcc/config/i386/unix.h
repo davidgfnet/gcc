@@ -73,8 +73,8 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
    and returns float values in the 387.  */
 #undef TARGET_SUBTARGET_DEFAULT
 #define TARGET_SUBTARGET_DEFAULT 0
-//#define TARGET_SUBTARGET_DEFAULT \
-//	(MASK_80387 | MASK_IEEE_FP | MASK_FLOAT_RETURNS)
+/*#define TARGET_SUBTARGET_DEFAULT \
+	(MASK_80387 | MASK_IEEE_FP | MASK_FLOAT_RETURNS) */
 
 /* By default, 64-bit mode uses 128-bit long double.  */
 #undef TARGET_SUBTARGET64_DEFAULT
