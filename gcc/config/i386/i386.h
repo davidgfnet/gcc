@@ -444,8 +444,8 @@ enum reg_class
       }                                                                 \
   } while (0)
 
-
-#define TARGET_CPU_CPP_BUILTINS()
+extern void o386_target_macros (struct cpp_reader *pfile);
+#define TARGET_CPU_CPP_BUILTINS() o386_target_macros(pfile)
 
 #define TARGET_SUBTARGET_ISA_DEFAULT 0
 
