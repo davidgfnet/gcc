@@ -1298,6 +1298,14 @@ struct mips_cpu_info {
    also requires TARGET_DOUBLE_FLOAT.  */
 #define ISA_HAS_TRUNC_W		(!ISA_MIPS1)
 
+/* Similar as above but for ceil/floor/round instructions.  */
+#define ISA_HAS_CEFLRO_W	(!ISA_MIPS1				\
+				 && !TARGET_MIPS5900)			\
+
+/* 64 bit integer variant of the above.  */
+#define ISA_HAS_CEFLRO_L	(mips_isa >= MIPS_ISA_MIPS3		\
+				 && !TARGET_MIPS5900)			\
+
 /* ISA includes the MIPS32r2 seb and seh instructions.  */
 #define ISA_HAS_SEB_SEH		((mips_isa_rev >= 2 && !TARGET_MIPS16)  \
 				  || TARGET_ALLEGREX)

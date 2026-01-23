@@ -103,6 +103,9 @@
   UNSPEC_FMAX
   UNSPEC_FRINT
   UNSPEC_FCLASS
+  UNSPEC_CEIL
+  UNSPEC_FLOOR
+  UNSPEC_ROUND
 
   ;; HI/LO moves.
   UNSPEC_MFHI
@@ -1038,6 +1041,14 @@
 (define_code_iterator any_le [le leu])
 
 (define_code_iterator any_return [return simple_return])
+
+;; Defines iterators for the floating point rounding operations.
+(define_int_iterator FPROUND_OP [UNSPEC_FLOOR UNSPEC_ROUND UNSPEC_CEIL])
+
+;; <fproundop> expands to the specified rounding operation.
+(define_int_attr fproundop [(UNSPEC_FLOOR "floor")
+			    (UNSPEC_ROUND "round")
+			    (UNSPEC_CEIL "ceil")])
 
 ;; <u> expands to an empty string when doing a signed operation and
 ;; "u" when doing an unsigned operation.
@@ -8114,6 +8125,28 @@
   "ISA_HAS_FRINT"
   "rint.<fmt>\t%0,%1"
   [(set_attr "type" "frint")
+   (set_attr "mode" "<UNITMODE>")])
+
+;;Float point rounding (ceil/floor/round).
+(define_insn "l<fproundop><SCALARF:mode>si2"
+  [(set (match_operand:SI 0 "register_operand" "=f")
+	(unspec:SI [(match_operand:SCALARF 1 "register_operand" "f")]
+			FPROUND_OP))]
+  "TARGET_HARD_FLOAT && ISA_HAS_CEFLRO_W
+   && (!flag_trapping_math || flag_fp_int_builtin_inexact)"
+  "<fproundop>.w.<fmt>\t%0,%1"
+  [(set_attr "type" "fcvt")
+   (set_attr "mode" "<UNITMODE>")])
+
+;;Float point rounding (ceil/floor/round), 64 bit vartiant.
+(define_insn "l<fproundop><SCALARF:mode>di2"
+  [(set (match_operand:DI 0 "register_operand" "=f")
+	(unspec:DI [(match_operand:SCALARF 1 "register_operand" "f")]
+			FPROUND_OP))]
+  "TARGET_HARD_FLOAT && TARGET_FLOAT64 && ISA_HAS_CEFLRO_L
+   && (!flag_trapping_math || flag_fp_int_builtin_inexact)"
+  "<fproundop>.l.<fmt>\t%0,%1"
+  [(set_attr "type" "fcvt")
    (set_attr "mode" "<UNITMODE>")])
 
 ;;Float point class mask
