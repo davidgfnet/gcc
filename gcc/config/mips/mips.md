@@ -6040,6 +6040,13 @@
   [(set_attr "type" "shift")
    (set_attr "mode" "<MODE>")])
 
+(define_insn "bitrevsi2"
+  [(set (match_operand:SI 0 "register_operand" "=d")
+	(bitreverse:SI (match_operand:SI 1 "register_operand" "d")))]
+  "ISA_HAS_BITREV"
+  "bitrev\t%0,%1"
+  [(set_attr "type" "shift")])
+
 (define_insn "bswaphi2"
   [(set (match_operand:HI 0 "register_operand" "=d")
 	(bswap:HI (match_operand:HI 1 "register_operand" "d")))]
