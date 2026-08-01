@@ -1264,8 +1264,15 @@ struct mips_cpu_info {
 #define ISA_HAS_WSBH		((mips_isa_rev >= 2 && !TARGET_MIPS16)  \
 				  || TARGET_ALLEGREX)
 
-/* Similar to WSBH but for 32 bit words (byte swap within a word). */
+/* Similar to WSBH but for 32 bit words (byte swap within a word).  */
 #define ISA_HAS_WSBW		(TARGET_ALLEGREX)
+
+/* MIPS64 has some instructions (DSBH & DSHD) similar to WSBH.  */
+#define ISA_HAS_DSBH_DSHD	(TARGET_64BIT && mips_isa_rev >= 2	\
+				 && !TARGET_MIPS16)
+
+/* ISA has the (D)BITSWAP (reverse bits within bytes) instruction.  */
+#define ISA_HAS_BITSWAP		(mips_isa_rev >= 6 && !TARGET_MIPS16)
 
 /* ISA has data prefetch instructions.  This controls use of 'pref'.  */
 #define ISA_HAS_PREFETCH	((ISA_MIPS4				\

@@ -86,6 +86,8 @@
   UNSPEC_WSBH
   UNSPEC_DSBH
   UNSPEC_DSHD
+  UNSPEC_BITSWAP
+  UNSPEC_DBITSWAP
 
   ;; Floating-point moves.
   UNSPEC_LOAD_LOW
@@ -6040,6 +6042,107 @@
   [(set_attr "type" "shift")
    (set_attr "mode" "<MODE>")])
 
+;; BITSWAP: reverses the bits within each byte.
+(define_insn "mips_bitswap"
+  [(set (match_operand:SI 0 "register_operand" "=d")
+	(unspec:SI [(match_operand:SI 1 "register_operand" "d")]
+		   UNSPEC_BITSWAP))]
+  "ISA_HAS_BITSWAP"
+  "bitswap\t%0,%1"
+  [(set_attr "type" "shift")
+   (set_attr "mode" "SI")])
+
+(define_insn "mips_dbitswap"
+  [(set (match_operand:DI 0 "register_operand" "=d")
+	(unspec:DI [(match_operand:DI 1 "register_operand" "d")]
+		   UNSPEC_DBITSWAP))]
+  "TARGET_64BIT && ISA_HAS_BITSWAP"
+  "dbitswap\t%0,%1"
+  [(set_attr "type" "shift")
+   (set_attr "mode" "DI")])
+
+;; BITREV: full 32 bit reverse.
+(define_insn "allegrex_bitrev"
+  [(set (match_operand:SI 0 "register_operand" "=d")
+	(bitreverse:SI (match_operand:SI 1 "register_operand" "d")))]
+  "TARGET_ALLEGREX"
+  "bitrev\t%0,%1"
+  [(set_attr "type" "shift")
+   (set_attr "mode" "SI")])
+
+(define_expand "bitreversesi2"
+  [(set (match_operand:SI 0 "register_operand")
+	(bitreverse:SI (match_operand:SI 1 "register_operand")))]
+  "TARGET_ALLEGREX || (ISA_HAS_BITSWAP && ISA_HAS_WSBH && ISA_HAS_ROR)"
+{
+  if (TARGET_ALLEGREX)
+    emit_insn (gen_allegrex_bitrev (operands[0], operands[1]));
+  else
+    {
+      rtx tmp = gen_reg_rtx (SImode);
+      emit_insn (gen_mips_bitswap (tmp, operands[1]));
+      emit_insn (gen_bswapsi2 (operands[0], tmp));
+    }
+  DONE;
+})
+
+(define_expand "bitreversedi2"
+  [(set (match_operand:DI 0 "register_operand")
+	(bitreverse:DI (match_operand:DI 1 "register_operand")))]
+  "TARGET_64BIT && ISA_HAS_BITSWAP && ISA_HAS_DSBH_DSHD"
+{
+  rtx tmp = gen_reg_rtx (DImode);
+
+  /* DBITSWAP reverses within each byte, BSWAP then reverses the bytes.  */
+  emit_insn (gen_mips_dbitswap (tmp, operands[1]));
+  emit_insn (gen_bswapdi2 (operands[0], tmp));
+  DONE;
+})
+
+(define_expand "bitreversehi2"
+  [(set (match_operand:HI 0 "register_operand")
+	(bitreverse:HI (match_operand:HI 1 "register_operand")))]
+  "TARGET_ALLEGREX || (ISA_HAS_BITSWAP && ISA_HAS_WSBH)"
+{
+  rtx in = lowpart_subreg (SImode, force_reg (HImode, operands[1]), HImode);
+  rtx tmp = gen_reg_rtx (SImode);
+
+  if (TARGET_ALLEGREX)
+    {
+      /* The 16 bits of interest end up in the upper half.  */
+      emit_insn (gen_allegrex_bitrev (tmp, in));
+      emit_insn (gen_lshrsi3 (tmp, tmp, GEN_INT (16)));
+      emit_move_insn (operands[0], gen_lowpart (HImode, tmp));
+    }
+  else
+    {
+      /* BITSWAP reverses within each byte, WSBH then swaps the two bytes.  */
+      emit_insn (gen_mips_bitswap (tmp, in));
+      emit_insn (gen_bswaphi2 (operands[0], gen_lowpart (HImode, tmp)));
+    }
+  DONE;
+})
+
+(define_expand "bitreverseqi2"
+  [(set (match_operand:QI 0 "register_operand")
+	(bitreverse:QI (match_operand:QI 1 "register_operand")))]
+  "TARGET_ALLEGREX || ISA_HAS_BITSWAP"
+{
+  rtx in = lowpart_subreg (SImode, force_reg (QImode, operands[1]), QImode);
+  rtx tmp = gen_reg_rtx (SImode);
+
+  if (TARGET_ALLEGREX)
+    {
+      emit_insn (gen_allegrex_bitrev (tmp, in));
+      emit_insn (gen_lshrsi3 (tmp, tmp, GEN_INT (24)));
+    }
+  else
+    emit_insn (gen_mips_bitswap (tmp, in));
+
+  emit_move_insn (operands[0], gen_lowpart (QImode, tmp));
+  DONE;
+})
+
 (define_insn "bswaphi2"
   [(set (match_operand:HI 0 "register_operand" "=d")
 	(bswap:HI (match_operand:HI 1 "register_operand" "d")))]
@@ -6074,7 +6177,7 @@
 (define_insn_and_split "bswapdi2"
   [(set (match_operand:DI 0 "register_operand" "=d")
 	(bswap:DI (match_operand:DI 1 "register_operand" "d")))]
-  "TARGET_64BIT && ISA_HAS_WSBH"
+  "TARGET_64BIT && ISA_HAS_DSBH_DSHD"
   "#"
   "&& 1"
   [(set (match_dup 0) (unspec:DI [(match_dup 1)] UNSPEC_DSBH))
