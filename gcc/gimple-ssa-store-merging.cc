@@ -1009,7 +1009,6 @@ is_bswap_or_nop_p (const uint8_t *n, const uint8_t *cmpxchg,
 		   const uint8_t *cmpnop, uint64_t* mask,
 		   bool* bswap)
 {
-  const uint64_t byte_mask = ((uint64_t) 1 << BITS_PER_UNIT) - 1;
   *mask = ~(uint64_t) 0;
   if (memcmp (n, cmpnop, MAX_SYM_BITS) == 0)
     *bswap = false;
@@ -1018,15 +1017,15 @@ is_bswap_or_nop_p (const uint8_t *n, const uint8_t *cmpxchg,
   else
     {
       int set = 0;
-      for (unsigned int i = 0; i < MAX_SYM_BITS; i += BITS_PER_UNIT)
-	if (sym_is_range_zero (n, i, BITS_PER_UNIT))
-	  *mask &= ~(byte_mask << i);
-	else if (memcmp (&n[i], &cmpxchg[i], BITS_PER_UNIT) == 0)
+      for (unsigned int i = 0; i < MAX_SYM_BITS; i++)
+	if (n[i] == 0)
+	  *mask &= ~((uint64_t) 1 << i);
+	else if (n[i] == cmpxchg[i])
 	  set++;
 	else
 	  return false;
 
-      if (set < 2)
+      if (set < 2 * BITS_PER_UNIT)
 	return false;
       *bswap = true;
     }
