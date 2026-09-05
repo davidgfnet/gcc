@@ -271,8 +271,7 @@ do_shift_rotate (enum tree_code code,
 
   if (size > MAX_SYM_BITS
       || count < 0
-      || count >= size
-      || count % BITS_PER_UNIT != 0)
+      || count >= size)
     return false;
 
   switch (code)
@@ -282,10 +281,9 @@ do_shift_rotate (enum tree_code code,
 	newv[i] = i < count ? 0 : n->n[i - count];
       break;
     case RSHIFT_EXPR:
-      /* Arithmetic shift of signed type: result is dependent on the value.  */
+      /* Arithmetic shift of signed type: propagate sign bit..  */
       {
-	uint8_t fillv = (TYPE_UNSIGNED (n->type) || n->n[size - 1] == 0)
-			? 0 : MARKER_BIT_UNKNOWN;
+	uint8_t fillv = TYPE_UNSIGNED (n->type) ? 0 : n->n[size - 1];
 	for (i = 0; i < size; i++)
 	  newv[i] = (i + count < size) ? n->n[i + count] : fillv;
       }
@@ -678,12 +676,6 @@ find_bswap_or_nop_1 (gimple *stmt, struct symbolic_number *n, int limit)
 	  {
 	    int i, size = TYPE_PRECISION (n->type);
 	    uint64_t val = int_cst_value (rhs2);
-	    uint64_t tmp = (1 << BITS_PER_UNIT) - 1;
-
-	    /* Only constants masking full bytes are allowed.  */
-	    for (i = 0; i < size; i += BITS_PER_UNIT, tmp <<= BITS_PER_UNIT)
-	      if ((val & tmp) != 0 && (val & tmp) != tmp)
-		return NULL;
 
 	    for (i = 0; i < size; i++)
 	      if (((val >> i) & 1) == 0)
@@ -709,13 +701,12 @@ find_bswap_or_nop_1 (gimple *stmt, struct symbolic_number *n, int limit)
 	    if (type_size > MAX_SYM_BITS)
 	      return NULL;
 
-	    /* Sign extension: result is dependent on the value.  */
+	    /* Sign extension: propagate MSB if necessary.  */
 	    old_type_size = TYPE_PRECISION (n->type);
 	    if (type_size > old_type_size)
 	      for (i = old_type_size; i < type_size; i++)
-		n->n[i] = (TYPE_UNSIGNED (n->type)
-			   || n->n[old_type_size - 1] == 0)
-			  ? 0 : MARKER_BIT_UNKNOWN;
+		n->n[i] = TYPE_UNSIGNED (n->type)
+			  ? 0 : n->n[old_type_size - 1];
 	    else
 	      for (i = type_size; i < old_type_size; i++)
 		n->n[i] = 0;
@@ -1114,7 +1105,7 @@ find_bswap_or_nop (gimple *stmt, struct symbolic_number *n, bool *bswap,
 	      break;
 	    }
 
-	  if (!count || count % BITS_PER_UNIT != 0)
+	  if (!count)
 	    return NULL;
 
 	  memcpy (tmp2_n, tmp_n, MAX_SYM_BITS);
