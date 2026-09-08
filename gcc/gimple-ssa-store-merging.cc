@@ -181,17 +181,30 @@
 
 namespace {
 
+enum bitperm_operation {
+  BITOP_NOP,    /* No operation (bits/bytes are not permutated in any way).  */
+  BITOP_BSWAP,  /* Bytes are swapped.  */
+  BITOP_BITREV, /* Bits are reversed.  */
+  BITOP_LAST
+};
+
+static const char * const bitperm_names[] = {
+  "nop",
+  "bswap",
+  "bitreverse"
+};
+
 struct bswap_stat
 {
-  /* Number of hand-written 16-bit nop / bswaps found.  */
+  /* Number of hand-written 16-bit nop / bswaps / bitrev found.  */
   int found_16bit;
 
-  /* Number of hand-written 32-bit nop / bswaps found.  */
+  /* Number of hand-written 32-bit nop / bswaps / bitrev found.  */
   int found_32bit;
 
-  /* Number of hand-written 64-bit nop / bswaps found.  */
+  /* Number of hand-written 64-bit nop / bswaps / bitrev found.  */
   int found_64bit;
-} nop_stats, bswap_stats;
+} op_stats[BITOP_LAST];
 
 /* A symbolic number structure is used to detect bit permutation and selection
    patterns of a source.  To achieve that, its array N contains a series of
@@ -246,6 +259,19 @@ sym_shift_right (uint8_t *n, unsigned int amount, uint8_t fillvalue)
 {
   for (unsigned int i = 0; i < MAX_SYM_BITS; i++)
     n[i] = i + amount < MAX_SYM_BITS ? n[amount + i] : fillvalue;
+}
+
+/* Perform a right rotation on a symbolic_number by amount bits.  */
+
+static void
+sym_rotate_right (uint8_t *dst, const uint8_t *src, unsigned int amount,
+		  unsigned int size)
+{
+  for (unsigned int i = 0; i < MAX_SYM_BITS; i++)
+    if (i < size)
+      dst[i] = src[(i + amount) % size];
+    else
+      dst[i] = 0;
 }
 
 static bool
@@ -325,7 +351,7 @@ verify_symbolic_number_p (struct symbolic_number *n, gimple *stmt)
   return true;
 }
 
-/* Initialize the symbolic number N for the bswap pass from the base element
+/* Initialize the symbolic number N for the bitperm pass from the base element
    SRC manipulated by the bitwise OR expression.  */
 
 bool
@@ -453,7 +479,7 @@ perform_symbolic_merge (gimple *source_stmt1, struct symbolic_number *n1,
       && TREE_CODE (TREE_OPERAND (rhs2, 0)) == SSA_NAME)
     rhs2 = TREE_OPERAND (rhs2, 0);
 
-  /* Sources are different, cancel bswap if they are not memory location with
+  /* Sources are different, cancel bitperm if they are not memory location with
      the same base (array, structure, ...).  */
   if (rhs1 != rhs2)
     {
@@ -917,12 +943,13 @@ find_bswap_or_nop_2 (gimple *stmt, struct symbolic_number *n, int limit)
   return ins_stmt;
 }
 
-/* Helper for find_bswap_or_nop and try_coalesce_bswap to compute
-   *CMPXCHG, *CMPNOP and adjust *N.  */
+/* Helper for find_bitperm_or_nop and try_coalesce_bswap to compute
+   *CMPXCHG, *CMPREV, *CMPNOP and adjust *N.  */
 
 void
-find_bswap_or_nop_finalize (struct symbolic_number *n, uint8_t *cmpxchg,
-			    uint8_t *cmpnop, bool *cast64_to_32)
+find_bitperm_or_nop_finalize (struct symbolic_number *n, uint8_t *cmpxchg,
+			      uint8_t *cmprev, uint8_t *cmpnop,
+			      bool *cast64_to_32)
 {
   unsigned i, rsize;
 
@@ -932,9 +959,11 @@ find_bswap_or_nop_finalize (struct symbolic_number *n, uint8_t *cmpxchg,
   for (i = 0; i < MAX_SYM_BITS; i++)
     cmpxchg[i] = ((MAX_SYM_BITS / BITS_PER_UNIT - i / BITS_PER_UNIT - 1)
 		  * BITS_PER_UNIT + i % BITS_PER_UNIT + 1);
-
+  for (i = 0; i < MAX_SYM_BITS; i++)
+    cmprev[i] = MAX_SYM_BITS - i;
   for (i = 0; i < MAX_SYM_BITS; i++)
     cmpnop[i] = i + 1;
+
   *cast64_to_32 = false;
 
   /* Find real size of result (highest non-zero byte).  */
@@ -955,8 +984,9 @@ find_bswap_or_nop_finalize (struct symbolic_number *n, uint8_t *cmpxchg,
 	  && n->range == 4
 	  && int_size_in_bytes (TREE_TYPE (n->src)) == 8)
 	{
-	  /* If all bytes in n->n are either 0 or in [5..8] range, this
-	     might be a candidate for (unsigned) __builtin_bswap64 (src).
+	  /* If all bits in n->n are either 0 or in [33..64] range, this
+	     might be a candidate for (unsigned) __builtin_bswap64 (src) or
+	     (unsigned) __builtin_bitreverse64 (src).
 	     It is not worth it for (unsigned short) __builtin_bswap64 (src)
 	     or (unsigned short) __builtin_bswap32 (src).  */
 	  *cast64_to_32 = true;
@@ -970,9 +1000,12 @@ find_bswap_or_nop_finalize (struct symbolic_number *n, uint8_t *cmpxchg,
 	}
       if (*cast64_to_32)
 	for (i = n->range * BITS_PER_UNIT; i < MAX_SYM_BITS; i++)
-	  cmpxchg[i] = 0;
+	  cmpxchg[i] = cmprev[i] = 0;
       else
-	sym_shift_right (cmpxchg, MAX_SYM_BITS - n->range * BITS_PER_UNIT, 0);
+	{
+	  sym_shift_right (cmpxchg, MAX_SYM_BITS - n->range * BITS_PER_UNIT, 0);
+	  sym_shift_right (cmprev, MAX_SYM_BITS - n->range * BITS_PER_UNIT, 0);
+	}
 
       for (i = n->range * BITS_PER_UNIT; i < MAX_SYM_BITS; i++)
 	cmpnop[i] = 0;
@@ -986,11 +1019,12 @@ find_bswap_or_nop_finalize (struct symbolic_number *n, uint8_t *cmpxchg,
 	{
 	  sym_shift_right (cmpnop, (n->range - rsize) * BITS_PER_UNIT, 0);
 	  for (i = rsize * BITS_PER_UNIT; i < MAX_SYM_BITS; i++)
-	    cmpxchg[i] = 0;
+	    cmpxchg[i] = cmprev[i] = 0;
 	}
       else
 	{
 	  sym_shift_right (cmpxchg, (n->range - rsize) * BITS_PER_UNIT, 0);
+	  sym_shift_right (cmprev, (n->range - rsize) * BITS_PER_UNIT, 0);
 	  for (i = rsize * BITS_PER_UNIT; i < MAX_SYM_BITS; i++)
 	    cmpnop[i] = 0;
 	}
@@ -1002,39 +1036,48 @@ find_bswap_or_nop_finalize (struct symbolic_number *n, uint8_t *cmpxchg,
   n->range *= BITS_PER_UNIT;
 }
 
-/* Helper function for find_bswap_or_nop,
-   Return true if N is a swap or nop with MASK.  */
+/* Helper function for find_bitperm_or_nop,
+   Return true if N is a swap/rev/nop with MASK.  */
 static bool
-is_bswap_or_nop_p (const uint8_t *n, const uint8_t *cmpxchg,
-		   const uint8_t *cmpnop, uint64_t* mask,
-		   bool* bswap)
+is_bitperm_or_nop_p (const uint8_t *n, const uint8_t *cmpxchg,
+		     const uint8_t *cmprev, const uint8_t *cmpnop,
+		     uint64_t* mask, enum bitperm_operation* bitop)
 {
   *mask = ~(uint64_t) 0;
   if (memcmp (n, cmpnop, MAX_SYM_BITS) == 0)
-    *bswap = false;
+    *bitop = BITOP_NOP;
   else if (memcmp (n, cmpxchg, MAX_SYM_BITS) == 0)
-    *bswap = true;
+    *bitop = BITOP_BSWAP;
+  else if (memcmp (n, cmprev, MAX_SYM_BITS) == 0)
+    *bitop = BITOP_BITREV;
   else
     {
-      int set = 0;
+      int set = 0, setxchg = 0, setrev = 0;
       for (unsigned int i = 0; i < MAX_SYM_BITS; i++)
 	if (n[i] == 0)
 	  *mask &= ~((uint64_t) 1 << i);
-	else if (n[i] == cmpxchg[i])
-	  set++;
 	else
-	  return false;
+	  {
+	    set++;
+	    if (n[i] == cmpxchg[i])
+	      setxchg++;
+	    if (n[i] == cmprev[i])
+	      setrev++;
+	  }
 
-      if (set < 2 * BITS_PER_UNIT)
+      if (set == setxchg && set >= 2 * BITS_PER_UNIT)
+	*bitop = BITOP_BSWAP;
+      else if (set == setrev && set >= BITS_PER_UNIT)
+	*bitop = BITOP_BITREV;
+      else
 	return false;
-      *bswap = true;
     }
   return true;
 }
 
 
-/* Check if STMT completes a bswap implementation or a read in a given
-   endianness consisting of ORs, SHIFTs and ANDs and sets *BSWAP
+/* Check if STMT completes a bit permutation or a read in a given
+   endianness consisting of ORs, SHIFTs and ANDs and sets *BITOP
    accordingly.  It also sets N to represent the kind of operations
    performed: size of the resulting expression and whether it works on
    a memory source, and if so alias-set and vuse.  At last, the
@@ -1042,8 +1085,9 @@ is_bswap_or_nop_p (const uint8_t *n, const uint8_t *cmpxchg,
    expression.  */
 
 gimple *
-find_bswap_or_nop (gimple *stmt, struct symbolic_number *n, bool *bswap,
-		   bool *cast64_to_32, uint64_t *mask, uint64_t* l_rotate)
+find_bitperm_or_nop (gimple *stmt, struct symbolic_number *n,
+		     enum bitperm_operation* bitop, bool *cast64_to_32,
+		     uint64_t *mask, uint64_t* l_rotate)
 {
   tree type_size = TYPE_SIZE_UNIT (TREE_TYPE (gimple_get_lhs (stmt)));
   if (!tree_fits_uhwi_p (type_size))
@@ -1054,15 +1098,15 @@ find_bswap_or_nop (gimple *stmt, struct symbolic_number *n, bool *bswap,
      increase that number by 2 * (log2(n) + 1) here in order to also
      cover signed -> unsigned conversions of the src operand as can be seen
      in libgcc, and for initial shift/and operation of the src operand.  */
-  int limit = tree_to_uhwi (type_size);
-  limit += 2 * (1 + (int) ceil_log2 ((unsigned HOST_WIDE_INT) limit));
+  int numbits = tree_to_uhwi (type_size) * BITS_PER_UNIT;
+  int limit = 2 + 3 * (1 + (int) ceil_log2 ((unsigned HOST_WIDE_INT) numbits));
   gimple *ins_stmt = find_bswap_or_nop_2 (stmt, n, limit);
   if (!ins_stmt)
     return NULL;
 
-  uint8_t cmpxchg[MAX_SYM_BITS], cmpnop[MAX_SYM_BITS];
+  uint8_t cmpxchg[MAX_SYM_BITS], cmprev[MAX_SYM_BITS], cmpnop[MAX_SYM_BITS];
   uint64_t orig_range = n->range * BITS_PER_UNIT;
-  find_bswap_or_nop_finalize (n, cmpxchg, cmpnop, cast64_to_32);
+  find_bitperm_or_nop_finalize (n, cmpxchg, cmprev, cmpnop, cast64_to_32);
 
   /* A complete byte swap should make the symbolic number to start with
      the largest digit in the highest order byte. Unchanged symbolic
@@ -1070,9 +1114,9 @@ find_bswap_or_nop (gimple *stmt, struct symbolic_number *n, bool *bswap,
   *l_rotate = 0;
   uint8_t tmp_n[MAX_SYM_BITS];
   memcpy (tmp_n, n->n, MAX_SYM_BITS);
-  if (!is_bswap_or_nop_p (tmp_n, cmpxchg, cmpnop, mask, bswap))
+  if (!is_bitperm_or_nop_p (tmp_n, cmpxchg, cmprev, cmpnop, mask, bitop))
     {
-      /* Try bswap + lrotate.  */
+      /* Try bswap/bitreverse + lrotate.  */
       /* TODO, handle cast64_to_32 and big/litte_endian memory
 	 source when rsize < range.  */
       if (n->range == orig_range
@@ -1084,37 +1128,55 @@ find_bswap_or_nop (gimple *stmt, struct symbolic_number *n, bool *bswap,
 	      || (orig_range == 64
 		  && optab_handler (rotl_optab, DImode) != CODE_FOR_nothing)))
 	{
-	  unsigned int count = 0;
+	  unsigned int swap_rot = 0, rev_rot = 0;
 	  uint8_t tmp2_n[MAX_SYM_BITS];
 
 	  /* Inspecting the lowest bit value, determine the rotation amount.
 	     Handles some bits/bytes being zero (i.e. 0x203040506070800).  */
 	  for (unsigned int i = 0; i < orig_range; i++)
 	    {
-	      unsigned int v, j;
 	      if (tmp_n[i] == 0)
 		continue;
 	      if (tmp_n[i] - 1u >= orig_range)
 		return NULL;
 
-	      v = tmp_n[i] - 1;
-	      j = (orig_range / BITS_PER_UNIT - 1 - v / BITS_PER_UNIT)
-		  * BITS_PER_UNIT + v % BITS_PER_UNIT;
-	      count = (i + orig_range - j) % orig_range;
+	      /* Calculate the expected poistions of the LSB for swap/rev.
+		 Then calculate the amount of rotation to get them there.  */
+	      unsigned int v = tmp_n[i] - 1;
+	      unsigned int pswap = (orig_range / BITS_PER_UNIT - 1
+				    - v / BITS_PER_UNIT) * BITS_PER_UNIT
+				    + v % BITS_PER_UNIT;
+	      unsigned int prev = orig_range - 1 - v;
+
+	      swap_rot = (i + orig_range - pswap) % orig_range;
+	      rev_rot = (i + orig_range - prev) % orig_range;
 	      break;
 	    }
 
-	  if (!count)
-	    return NULL;
+	  if (swap_rot)
+	    {
+	      sym_rotate_right (tmp2_n, tmp_n, swap_rot, orig_range);
+	      if (is_bitperm_or_nop_p (tmp2_n, cmpxchg, cmprev, cmpnop, mask,
+				       bitop))
+		{
+		  *l_rotate = swap_rot;
+		  gcc_assert (*bitop != BITOP_NOP);
+		  return ins_stmt;
+		}
+	    }
+	  if (rev_rot)
+	    {
+	      sym_rotate_right (tmp2_n, tmp_n, rev_rot, orig_range);
+	      if (is_bitperm_or_nop_p (tmp2_n, cmpxchg, cmprev, cmpnop, mask,
+				       bitop))
+		{
+		  *l_rotate = rev_rot;
+		  gcc_assert (*bitop != BITOP_NOP);
+		  return ins_stmt;
+		}
+	    }
 
-	  memcpy (tmp2_n, tmp_n, MAX_SYM_BITS);
-	  for (unsigned int i = 0; i < orig_range; i++)
-	    tmp2_n[i] = tmp_n[(i + count) % orig_range];
-
-	  if (!is_bswap_or_nop_p (tmp2_n, cmpxchg, cmpnop, mask, bswap))
-	    return NULL;
-	  *l_rotate = count;
-	  gcc_assert (*bswap);
+	  return NULL;
 	}
       else
 	return NULL;
@@ -1210,12 +1272,12 @@ bswap_view_convert (gimple_stmt_iterator *gsi, tree type, tree val,
    same VUSE which can lead to gsi_stmt (GSI) changing of basic block.  */
 
 tree
-bswap_replace (gimple_stmt_iterator gsi, gimple *ins_stmt, tree fndecl,
-	       tree bswap_type, tree load_type, struct symbolic_number *n,
-	       bool bswap, uint64_t mask, uint64_t l_rotate)
+bitperm_replace (gimple_stmt_iterator gsi, gimple *ins_stmt, tree fndecl,
+		 tree bperm_type, tree load_type, struct symbolic_number *n,
+		 enum bitperm_operation op, uint64_t mask, uint64_t l_rotate)
 {
   tree src, tmp, tgt = NULL_TREE;
-  gimple *bswap_stmt, *mask_stmt = NULL, *rotl_stmt = NULL;
+  gimple *bitperm_stmt, *mask_stmt = NULL, *rotl_stmt = NULL;
   tree_code conv_code = NOP_EXPR;
 
   gimple *cur_stmt = gsi_stmt (gsi);
@@ -1296,16 +1358,16 @@ bswap_replace (gimple_stmt_iterator gsi, gimple *ins_stmt, tree fndecl,
       val_expr = fold_build2 (MEM_REF, aligned_load_type, addr_tmp,
 			      load_offset_ptr);
 
-      if (!bswap)
+      if (op == BITOP_NOP)
 	{
 	  if (n->range == 16)
-	    nop_stats.found_16bit++;
+	    op_stats[BITOP_NOP].found_16bit++;
 	  else if (n->range == 32)
-	    nop_stats.found_32bit++;
+	    op_stats[BITOP_NOP].found_32bit++;
 	  else
 	    {
 	      gcc_assert (n->range == 64);
-	      nop_stats.found_64bit++;
+	      op_stats[BITOP_NOP].found_64bit++;
 	    }
 
 	  /* Convert the result of load if necessary.  */
@@ -1354,7 +1416,7 @@ bswap_replace (gimple_stmt_iterator gsi, gimple *ins_stmt, tree fndecl,
 	}
       src = val_tmp;
     }
-  else if (!bswap)
+  else if (op == BITOP_NOP)
     {
       gimple *g = NULL;
       if (tgt && !useless_type_conversion_p (TREE_TYPE (tgt), TREE_TYPE (src)))
@@ -1370,13 +1432,13 @@ bswap_replace (gimple_stmt_iterator gsi, gimple *ins_stmt, tree fndecl,
       else
 	tgt = src;
       if (n->range == 16)
-	nop_stats.found_16bit++;
+	op_stats[BITOP_NOP].found_16bit++;
       else if (n->range == 32)
-	nop_stats.found_32bit++;
+	op_stats[BITOP_NOP].found_32bit++;
       else
 	{
 	  gcc_assert (n->range == 64);
-	  nop_stats.found_64bit++;
+	  op_stats[BITOP_NOP].found_64bit++;
 	}
       if (dump_file)
 	{
@@ -1399,23 +1461,23 @@ bswap_replace (gimple_stmt_iterator gsi, gimple *ins_stmt, tree fndecl,
     src = TREE_OPERAND (src, 0);
 
   if (n->range == 16)
-    bswap_stats.found_16bit++;
+    op_stats[op].found_16bit++;
   else if (n->range == 32)
-    bswap_stats.found_32bit++;
+    op_stats[op].found_32bit++;
   else
     {
       gcc_assert (n->range == 64);
-      bswap_stats.found_64bit++;
+      op_stats[op].found_64bit++;
     }
 
   tmp = src;
 
   /* Convert the src expression if necessary.  */
-  if (!useless_type_conversion_p (TREE_TYPE (tmp), bswap_type))
+  if (!useless_type_conversion_p (TREE_TYPE (tmp), bperm_type))
     {
       gimple *convert_stmt;
 
-      tmp = make_temp_ssa_name (bswap_type, NULL, "bswapsrc");
+      tmp = make_temp_ssa_name (bperm_type, NULL, "bswapsrc");
       convert_stmt = gimple_build_assign (tmp, NOP_EXPR, src);
       gsi_insert_before (&gsi, convert_stmt, GSI_SAME_STMT);
     }
@@ -1424,42 +1486,42 @@ bswap_replace (gimple_stmt_iterator gsi, gimple *ins_stmt, tree fndecl,
      are considered as rotation of 2N bit values by N bits is generally not
      equivalent to a bswap.  Consider for instance 0x01020304 r>> 16 which
      gives 0x03040102 while a bswap for that value is 0x04030201.  */
-  if (bswap && n->range == 16)
+  if (op == BITOP_BSWAP && n->range == 16)
     {
       tree count = build_int_cst (integer_type_node, BITS_PER_UNIT);
-      src = fold_build2 (LROTATE_EXPR, bswap_type, tmp, count);
-      bswap_stmt = gimple_build_assign (NULL, src);
+      src = fold_build2 (LROTATE_EXPR, bperm_type, tmp, count);
+      bitperm_stmt = gimple_build_assign (NULL, src);
     }
   else
-    bswap_stmt = gimple_build_call (fndecl, 1, tmp);
+    bitperm_stmt = gimple_build_call (fndecl, 1, tmp);
 
   if (tgt == NULL_TREE)
-    tgt = make_ssa_name (bswap_type);
+    tgt = make_ssa_name (bperm_type);
   tmp = tgt;
 
   if (mask != ~(uint64_t) 0)
     {
-      tree m = build_int_cst (bswap_type, mask);
-      tmp = make_temp_ssa_name (bswap_type, NULL, "bswapdst");
-      gimple_set_lhs (bswap_stmt, tmp);
+      tree m = build_int_cst (bperm_type, mask);
+      tmp = make_temp_ssa_name (bperm_type, NULL, "bswapdst");
+      gimple_set_lhs (bitperm_stmt, tmp);
       mask_stmt = gimple_build_assign (tgt, BIT_AND_EXPR, tmp, m);
       tmp = tgt;
     }
 
   if (l_rotate)
     {
-      tree m = build_int_cst (bswap_type, l_rotate);
-      tmp = make_temp_ssa_name (bswap_type, NULL,
+      tree m = build_int_cst (bperm_type, l_rotate);
+      tmp = make_temp_ssa_name (bperm_type, NULL,
 				mask_stmt ? "bswapmaskdst" : "bswapdst");
-      gimple_set_lhs (mask_stmt ? mask_stmt : bswap_stmt, tmp);
+      gimple_set_lhs (mask_stmt ? mask_stmt : bitperm_stmt, tmp);
       rotl_stmt = gimple_build_assign (tgt, LROTATE_EXPR, tmp, m);
       tmp = tgt;
     }
 
   /* Convert the result if necessary.  */
-  if (!useless_type_conversion_p (TREE_TYPE (tgt), bswap_type))
+  if (!useless_type_conversion_p (TREE_TYPE (tgt), bperm_type))
     {
-      tmp = make_temp_ssa_name (bswap_type, NULL, "bswapdst");
+      tmp = make_temp_ssa_name (bperm_type, NULL, "bswapdst");
       tree atmp = tmp;
       gimple_stmt_iterator gsi2 = gsi;
       if (conv_code == VIEW_CONVERT_EXPR)
@@ -1469,12 +1531,12 @@ bswap_replace (gimple_stmt_iterator gsi, gimple *ins_stmt, tree fndecl,
     }
 
   gimple_set_lhs (rotl_stmt ? rotl_stmt
-		  : mask_stmt ? mask_stmt : bswap_stmt, tmp);
+		  : mask_stmt ? mask_stmt : bitperm_stmt, tmp);
 
   if (dump_file)
     {
-      fprintf (dump_file, "%d bit bswap implementation found at: ",
-	       (int) n->range);
+      fprintf (dump_file, "%d bit %s implementation found at: ",
+	       (int) n->range, bitperm_names[op]);
       if (cur_stmt)
 	print_gimple_stmt (dump_file, cur_stmt, 0);
       else
@@ -1490,12 +1552,12 @@ bswap_replace (gimple_stmt_iterator gsi, gimple *ins_stmt, tree fndecl,
 	gsi_insert_after (&gsi, rotl_stmt, GSI_SAME_STMT);
       if (mask_stmt)
 	gsi_insert_after (&gsi, mask_stmt, GSI_SAME_STMT);
-      gsi_insert_after (&gsi, bswap_stmt, GSI_SAME_STMT);
+      gsi_insert_after (&gsi, bitperm_stmt, GSI_SAME_STMT);
       gsi_remove (&gsi, true);
     }
   else
     {
-      gsi_insert_before (&gsi, bswap_stmt, GSI_SAME_STMT);
+      gsi_insert_before (&gsi, bitperm_stmt, GSI_SAME_STMT);
       if (mask_stmt)
 	gsi_insert_before (&gsi, mask_stmt, GSI_SAME_STMT);
       if (rotl_stmt)
@@ -1514,7 +1576,6 @@ maybe_optimize_vector_constructor (gimple *cur_stmt)
 {
   tree fndecl = NULL_TREE, bswap_type = NULL_TREE, load_type;
   struct symbolic_number n;
-  bool bswap;
 
   gcc_assert (is_gimple_assign (cur_stmt));
   switch (gimple_assign_rhs_code (cur_stmt))
@@ -1564,24 +1625,25 @@ maybe_optimize_vector_constructor (gimple *cur_stmt)
       return false;
     }
 
+  enum bitperm_operation bitop;
   bool cast64_to_32;
   uint64_t mask, l_rotate;
-  gimple *ins_stmt = find_bswap_or_nop (cur_stmt, &n, &bswap,
-					&cast64_to_32, &mask, &l_rotate);
+  gimple *ins_stmt = find_bitperm_or_nop (cur_stmt, &n, &bitop,
+					  &cast64_to_32, &mask, &l_rotate);
   if (!ins_stmt
       || n.range != (unsigned HOST_WIDE_INT) sz
       || cast64_to_32
+      || bitop == BITOP_BITREV
       || mask != ~(uint64_t) 0)
     return false;
 
-  if (bswap && !fndecl && n.range != 16)
+  if (bitop == BITOP_BSWAP && !fndecl && n.range != 16)
     return false;
 
-  memset (&nop_stats, 0, sizeof (nop_stats));
-  memset (&bswap_stats, 0, sizeof (bswap_stats));
-  return bswap_replace (gsi_for_stmt (cur_stmt), ins_stmt, fndecl,
-			bswap_type, load_type, &n, bswap, mask,
-			l_rotate) != NULL_TREE;
+  memset (&op_stats[0], 0, sizeof (op_stats));
+  return bitperm_replace (gsi_for_stmt (cur_stmt), ins_stmt, fndecl,
+			  bswap_type, load_type, &n, bitop, mask,
+			  l_rotate) != NULL_TREE;
 }
 
 /* Find manual byte swap implementations as well as load in a given
@@ -1594,13 +1656,23 @@ pass_optimize_bswap::execute (function *fun)
 {
   basic_block bb;
   bool bswap32_p, bswap64_p;
+  bool bitrev16_p, bitrev32_p, bitrev64_p;
   bool changed = false;
   tree bswap32_type = NULL_TREE, bswap64_type = NULL_TREE;
+  tree bitrev16_type = NULL_TREE;
+  tree bitrev32_type = NULL_TREE, bitrev64_type = NULL_TREE;
 
   bswap32_p = (builtin_decl_explicit_p (BUILT_IN_BSWAP32)
 	       && can_open_code_p (bswap_optab, SImode));
   bswap64_p = (builtin_decl_explicit_p (BUILT_IN_BSWAP64)
 	       && can_open_code_p (bswap_optab, DImode));
+
+  bitrev16_p = (builtin_decl_explicit_p (BUILT_IN_BITREVERSE16)
+		&& can_open_code_p (bitreverse_optab, HImode));
+  bitrev32_p = (builtin_decl_explicit_p (BUILT_IN_BITREVERSE32)
+		&& can_open_code_p (bitreverse_optab, SImode));
+  bitrev64_p = (builtin_decl_explicit_p (BUILT_IN_BITREVERSE64)
+		&& can_open_code_p (bitreverse_optab, DImode));
 
   /* Determine the argument type of the builtins.  The code later on
      assumes that the return and argument type are the same.  */
@@ -1616,30 +1688,40 @@ pass_optimize_bswap::execute (function *fun)
       bswap64_type = TREE_VALUE (TYPE_ARG_TYPES (TREE_TYPE (fndecl)));
     }
 
-  memset (&nop_stats, 0, sizeof (nop_stats));
-  memset (&bswap_stats, 0, sizeof (bswap_stats));
+  if (bitrev16_p)
+    bitrev16_type = TREE_VALUE (TYPE_ARG_TYPES (TREE_TYPE (
+	builtin_decl_explicit (BUILT_IN_BITREVERSE16))));
+
+  if (bitrev32_p)
+    bitrev32_type = TREE_VALUE (TYPE_ARG_TYPES (TREE_TYPE (
+	builtin_decl_explicit (BUILT_IN_BITREVERSE32))));
+
+  if (bitrev64_p)
+    bitrev64_type = TREE_VALUE (TYPE_ARG_TYPES (TREE_TYPE (
+	builtin_decl_explicit (BUILT_IN_BITREVERSE64))));
+
+
+  memset (&op_stats[0], 0, sizeof (op_stats));
   calculate_dominance_info (CDI_DOMINATORS);
 
   FOR_EACH_BB_FN (bb, fun)
     {
       gimple_stmt_iterator gsi;
 
-      /* We do a reverse scan for bswap patterns to make sure we get the
-	 widest match. As bswap pattern matching doesn't handle previously
-	 inserted smaller bswap replacements as sub-patterns, the wider
+      /* We do a reverse scan for bitperm patterns to make sure we get the
+	 widest match.  As bitperm pattern matching doesn't handle previously
+	 inserted smaller bitperm replacements as sub-patterns, the wider
 	 variant wouldn't be detected.  */
       for (gsi = gsi_last_bb (bb); !gsi_end_p (gsi);)
 	{
 	  gimple *ins_stmt, *cur_stmt = gsi_stmt (gsi);
-	  tree fndecl = NULL_TREE, bswap_type = NULL_TREE, load_type;
+	  tree fndecl = NULL_TREE, bitperm_type = NULL_TREE, load_type;
 	  enum tree_code code;
 	  struct symbolic_number n;
-	  bool bswap, cast64_to_32;
-	  uint64_t mask, l_rotate;
 
 	  /* This gsi_prev (&gsi) is not part of the for loop because cur_stmt
-	     might be moved to a different basic block by bswap_replace and gsi
-	     must not points to it if that's the case.  Moving the gsi_prev
+	     might be moved to a different basic block by bitperm_replace and
+	     gsi must not points to it if that's the case.  Moving the gsi_prev
 	     there make sure that gsi points to the statement previous to
 	     cur_stmt while still making sure that all statements are
 	     considered in this basic block.  */
@@ -1675,8 +1757,11 @@ pass_optimize_bswap::execute (function *fun)
 	      continue;
 	    }
 
-	  ins_stmt = find_bswap_or_nop (cur_stmt, &n, &bswap,
-					&cast64_to_32, &mask, &l_rotate);
+	  enum bitperm_operation bitop;
+	  uint64_t mask, l_rotate;
+	  bool cast64_to_32;
+	  ins_stmt = find_bitperm_or_nop (cur_stmt, &n, &bitop,
+					  &cast64_to_32, &mask, &l_rotate);
 
 	  if (!ins_stmt)
 	    continue;
@@ -1684,53 +1769,80 @@ pass_optimize_bswap::execute (function *fun)
 	  switch (n.range)
 	    {
 	    case 16:
-	      /* Already in canonical form, nothing to do.  */
-	      if (code == LROTATE_EXPR || code == RROTATE_EXPR)
-		continue;
-	      load_type = bswap_type = uint16_type_node;
+	      load_type = bitperm_type = uint16_type_node;
+	      if (bitop == BITOP_BSWAP)
+		{
+		  /* Already in canonical form, nothing to do.  */
+		  if (code == LROTATE_EXPR || code == RROTATE_EXPR)
+		    continue;
+		}
+	      else if (bitop == BITOP_BITREV && bitrev16_p)
+		{
+		  fndecl = builtin_decl_explicit (BUILT_IN_BITREVERSE16);
+		  bitperm_type = bitrev16_type;
+		}
 	      break;
 	    case 32:
-	      load_type = uint32_type_node;
-	      if (bswap32_p)
+	      load_type = bitperm_type = uint32_type_node;
+	      if (bitop == BITOP_BSWAP && bswap32_p)
 		{
 		  fndecl = builtin_decl_explicit (BUILT_IN_BSWAP32);
-		  bswap_type = bswap32_type;
+		  bitperm_type = bswap32_type;
+		}
+	      else if (bitop == BITOP_BITREV && bitrev32_p)
+		{
+		  fndecl = builtin_decl_explicit (BUILT_IN_BITREVERSE32);
+		  bitperm_type = bitrev32_type;
 		}
 	      break;
 	    case 64:
-	      load_type = uint64_type_node;
-	      if (bswap64_p)
+	      load_type = bitperm_type = uint64_type_node;
+	      if (bitop == BITOP_BSWAP && bswap64_p)
 		{
 		  fndecl = builtin_decl_explicit (BUILT_IN_BSWAP64);
-		  bswap_type = bswap64_type;
+		  bitperm_type = bswap64_type;
+		}
+	      else if (bitop == BITOP_BITREV && bitrev64_p)
+		{
+		  fndecl = builtin_decl_explicit (BUILT_IN_BITREVERSE64);
+		  bitperm_type = bitrev64_type;
 		}
 	      break;
 	    default:
 	      continue;
 	    }
 
-	  if (bswap && !fndecl && n.range != 16)
+	  /* Bail if we don't have a proper function to call.  */
+	  if (!fndecl
+	      && ((bitop == BITOP_BSWAP && n.range != 16)
+		  || bitop == BITOP_BITREV))
 	    continue;
 
-	  if (bswap_replace (gsi_for_stmt (cur_stmt), ins_stmt, fndecl,
-			     bswap_type, load_type, &n, bswap, mask,
-			     l_rotate))
+	  if (bitperm_replace (gsi_for_stmt (cur_stmt), ins_stmt, fndecl,
+			       bitperm_type, load_type, &n, bitop, mask,
+			       l_rotate))
 	    changed = true;
 	}
     }
 
   statistics_counter_event (fun, "16-bit nop implementations found",
-			    nop_stats.found_16bit);
+			    op_stats[BITOP_NOP].found_16bit);
   statistics_counter_event (fun, "32-bit nop implementations found",
-			    nop_stats.found_32bit);
+			    op_stats[BITOP_NOP].found_32bit);
   statistics_counter_event (fun, "64-bit nop implementations found",
-			    nop_stats.found_64bit);
+			    op_stats[BITOP_NOP].found_64bit);
   statistics_counter_event (fun, "16-bit bswap implementations found",
-			    bswap_stats.found_16bit);
+			    op_stats[BITOP_BSWAP].found_16bit);
   statistics_counter_event (fun, "32-bit bswap implementations found",
-			    bswap_stats.found_32bit);
+			    op_stats[BITOP_BSWAP].found_32bit);
   statistics_counter_event (fun, "64-bit bswap implementations found",
-			    bswap_stats.found_64bit);
+			    op_stats[BITOP_BSWAP].found_64bit);
+  statistics_counter_event (fun, "16-bit bitreverse implementations found",
+			    op_stats[BITOP_BITREV].found_16bit);
+  statistics_counter_event (fun, "32-bit bitreverse implementations found",
+			    op_stats[BITOP_BITREV].found_32bit);
+  statistics_counter_event (fun, "64-bit bitreverse implementations found",
+			    op_stats[BITOP_BITREV].found_64bit);
 
   return (changed ? TODO_update_ssa : 0);
 }
@@ -3059,9 +3171,9 @@ imm_store_chain_info::try_coalesce_bswap (merged_store_group *merged_store,
 	}
     }
 
-  uint8_t cmpxchg[MAX_SYM_BITS], cmpnop[MAX_SYM_BITS];
+  uint8_t cmpxchg[MAX_SYM_BITS], cmprev[MAX_SYM_BITS], cmpnop[MAX_SYM_BITS];
   bool cast64_to_32;
-  find_bswap_or_nop_finalize (&n, cmpxchg, cmpnop, &cast64_to_32);
+  find_bitperm_or_nop_finalize (&n, cmpxchg, cmprev, cmpnop, &cast64_to_32);
 
   /* A complete byte swap should make the symbolic number to start with
      the largest digit in the highest order byte.  Unchanged symbolic
@@ -4424,9 +4536,10 @@ imm_store_chain_info::output_merged_store (merged_store_group *group)
 	    /* Update vuse in case it has changed by output_merged_stores.  */
 	    n->vuse = gimple_vuse (ins_stmt);
 	}
-      bswap_res = bswap_replace (gsi_start (seq), ins_stmt, fndecl,
-				 bswap_type, load_type, n, bswap,
-				 ~(uint64_t) 0, 0);
+      bswap_res = bitperm_replace (gsi_start (seq), ins_stmt, fndecl,
+				   bswap_type, load_type, n,
+				   bswap ? BITOP_BSWAP : BITOP_NOP,
+				   ~(uint64_t) 0, 0);
       gcc_assert (bswap_res);
     }
 

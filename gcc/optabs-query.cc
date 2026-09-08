@@ -882,7 +882,8 @@ can_open_code_p (optab op, machine_mode mode)
     return true;
 
   scalar_int_mode int_mode;
-  if (op == bswap_optab && is_a<scalar_int_mode> (mode, &int_mode))
+  if ((op == bswap_optab || op == bitreverse_optab)
+      && is_a<scalar_int_mode> (mode, &int_mode))
     {
       /* widen_bswap_or_bitreverse can implement smaller bswaps using
 	 wider bswaps and a shift.  */
