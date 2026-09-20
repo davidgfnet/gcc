@@ -275,6 +275,28 @@ sym_is_range_zero (const uint8_t *n, unsigned int start, unsigned int count)
   return true;
 }
 
+/* Return true if we can implement bitreverse for mode MODE.  This is true
+   if there are instructions for it or a libfunc call.  Also true if
+   expand_bitreverse can emit code (this requires bswap).
+*/
+
+static bool
+can_open_bitreverse_p (machine_mode mode)
+{
+  if (can_implement_p (bitreverse_optab, mode))
+    return true;
+
+  scalar_int_mode int_mode;
+  if (is_a<scalar_int_mode> (mode, &int_mode))
+    {
+      int precision = GET_MODE_BITSIZE (int_mode);
+      if (precision < 16 || can_open_code_p (bswap_optab, mode))
+	return true;
+    }
+
+  return false;
+}
+
 /* Perform a SHIFT or ROTATE operation by COUNT bits on symbolic
    number N.  Return false if the requested operation is not permitted
    on a symbolic number.  */
@@ -1642,13 +1664,13 @@ pass_optimize_bswap::execute (function *fun)
 	       && can_open_code_p (bswap_optab, DImode));
 
   bitrev8_p = (builtin_decl_explicit_p (BUILT_IN_BITREVERSE8)
-		&& can_open_code_p (bitreverse_optab, QImode));
+		&& can_open_bitreverse_p (QImode));
   bitrev16_p = (builtin_decl_explicit_p (BUILT_IN_BITREVERSE16)
-		&& can_open_code_p (bitreverse_optab, HImode));
+		&& can_open_bitreverse_p (HImode));
   bitrev32_p = (builtin_decl_explicit_p (BUILT_IN_BITREVERSE32)
-		&& can_open_code_p (bitreverse_optab, SImode));
+		&& can_open_bitreverse_p (SImode));
   bitrev64_p = (builtin_decl_explicit_p (BUILT_IN_BITREVERSE64)
-		&& can_open_code_p (bitreverse_optab, DImode));
+		&& can_open_bitreverse_p (DImode));
 
   /* Determine the argument type of the builtins.  The code later on
      assumes that the return and argument type are the same.  */
